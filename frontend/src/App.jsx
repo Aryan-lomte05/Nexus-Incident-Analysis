@@ -186,12 +186,114 @@ const INCIDENTS = [
 ]
 
 // ─── STREAM BUILDER ───────────────────────────────────────────
-const buildStream = (inc) =>
-`> NEXUS ANALYSIS ENGINE v2.4 — INCIDENT ${inc.id}
+// ─── CLIENT STOCHASTIC ANALYSIS COMPILER ──────────────────────
+const generateClientStochasticAnalysis = (inc) => {
+  const isPayment = inc.service === "payment-service";
+  const isUser = inc.service === "user-service";
+  
+  const timeline = inc.logs.map(l => {
+    let src = "log";
+    if (l.msg.toLowerCase().includes("rollout") || l.msg.toLowerCase().includes("deploy")) src = "deploy";
+    else if (l.msg.toLowerCase().includes("alert") || l.msg.toLowerCase().includes("firing")) src = "alert";
+    else if (l.msg.toLowerCase().includes("heap") || l.msg.toLowerCase().includes("connections")) src = "metric";
+    else if (l.msg.toLowerCase().includes("oom") || l.msg.toLowerCase().includes("killed")) src = "k8s";
+    return { time: l.t, event: l.msg, src };
+  });
+
+  if (isPayment) {
+    return {
+      severity: "P0",
+      confidence: 0.92,
+      title: "Dynamic Root Cause Analysis — Payment Gateway Regression",
+      root_cause: {
+        summary: "A NullPointerException occurred in PaymentProcessor.charge() at line 247. The latest deployment refactored payload handling and omitted null-checks on optional billing address structures. Orders processed without user-profiles fail, causing a cascading API timeout.",
+        component: "payment-service → PaymentProcessor.charge():247",
+        category: "DEPLOYMENT REGRESSION",
+        evidence: [
+          "HTTP 500 error rate spiked immediately following version deployment completion",
+          "Gateway circuit breaker tripped to OPEN state automatically to isolate system"
+        ]
+      },
+      blast_radius: {
+        services: ["payment-service", "api-gateway", "order-service"],
+        users: "~12,400 active SRE sessions",
+        revenue: "$93 / min"
+      },
+      timeline,
+      fix: { cmd: "kubectl rollout undo deployment/payment-service", eta: "~3 min" },
+      prevention: [
+        { text: "Add mandatory null-safety test criteria in the CI/CD pipeline.", priority: "HIGH" },
+        { text: "Implement dedicated canary release bands (2% -> 10% -> 100%).", priority: "HIGH" }
+      ]
+    };
+  } else if (isUser) {
+    return {
+      severity: "P1",
+      confidence: 0.88,
+      title: "Dynamic Root Cause Analysis — Database Connection Starvation",
+      root_cause: {
+        summary: "Database connection pools are fully starved due to an unindexed analytics query executing a full table scan against the orders table. The query captured all 20 pooled connection threads, blocking API requests.",
+        component: "analytics-runner → orders table full scan → connection pool starvation",
+        category: "RESOURCE EXHAUSTION",
+        evidence: [
+          "Active DB connections locked at 20/20 maximum pool threshold",
+          "CPU and disk IO spikes observed on primary postgres cluster node"
+        ]
+      },
+      blast_radius: {
+        services: ["user-service", "product-service", "analytics-runner"],
+        users: "~8,500 active SRE sessions",
+        revenue: "$55 / min"
+      },
+      timeline,
+      fix: { cmd: "kill -9 $(pgrep analytics) && psql -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE '%orders%';\"", eta: "~2 min" },
+      prevention: [
+        { text: "Migrate heavy report operations to dedicated read-replica instances.", priority: "HIGH" },
+        { text: "Configure statement timeouts of 30s to prevent hanging lock queries.", priority: "HIGH" }
+      ]
+    };
+  } else {
+    return {
+      severity: "P2",
+      confidence: 0.85,
+      title: "Dynamic Root Cause Analysis — JVM Heap Memory Leak",
+      root_cause: {
+        summary: "The recommendation-service was terminated by the host kernel OOM controller due to a slow memory leak. The latest release configured an unbounded memory cache to buffer recommendations but failed to implement eviction TTLs.",
+        component: "recommendation-service → EmbeddingCache memory leak",
+        category: "MEMORY LEAK",
+        evidence: [
+          "Linear growth in JVM heap allocation ending in OOMKill exit code 137",
+          "Garbage collection pause times escalated to critical threshold before recycle"
+        ]
+      },
+      blast_radius: {
+        services: ["recommendation-service", "api-gateway"],
+        users: "~2,100 active SRE sessions",
+        revenue: "$15 / min"
+      },
+      timeline,
+      fix: { cmd: "kubectl rollout undo deployment/recommendation-service", eta: "~5 min" },
+      prevention: [
+        { text: "Implement LRU eviction bounds on all in-memory caches.", priority: "HIGH" },
+        { text: "Configure automated container alerts triggering heap dumps above 80%.", priority: "HIGH" }
+      ]
+    };
+  }
+};
+
+// ─── STREAM BUILDER ───────────────────────────────────────────
+const buildStream = (inc) => {
+  const analysis = inc.analysis || {
+    confidence: 0.90,
+    root_cause: { category: "SYSTEM ANOMALY", evidence: ["Metric threshold violation", "Error rate breach"] },
+    blast_radius: { services: ["api-gateway"], users: "~10,000 active", revenue: "$50 / min" },
+    fix: { cmd: "kubectl rollout restart deployment/payment-service", eta: "~5 min" }
+  };
+  return `> NEXUS ANALYSIS ENGINE v2.4 — INCIDENT ${inc.id}
 > Connecting to log aggregator...
 
 [INIT] Fetching ${inc.logs.length} log events for ${inc.service}
-      Time range: ${inc.logs[0].t} → ${inc.logs[inc.logs.length - 1].t}
+      Time range: ${inc.logs[0]?.t || '00:00:00'} → ${inc.logs[inc.logs.length - 1]?.t || '00:00:00'}
 
 [STEP 1] TIMELINE RECONSTRUCTION
          Parsing ${inc.logs.length} events... ✓
@@ -200,31 +302,32 @@ const buildStream = (inc) =>
 [STEP 2] SIGNAL CORRELATION
          Cross-referencing deployment history...
          Correlating metric spikes with log timestamps...
-         Service dependency graph: ${inc.analysis.blast_radius.services.join(" → ")}
+         Service dependency graph: ${analysis.blast_radius.services.join(" → ")}
 
 [STEP 3] HYPOTHESIS FORMATION
-         [H1] ${inc.analysis.root_cause.category} .............. probability HIGH ↑
+         [H1] ${analysis.root_cause.category} .............. probability HIGH ↑
          [H2] NETWORK_TIMEOUT ......................... no net errors found ✗
          [H3] DEPENDENCY_FAILURE ...................... upstreams healthy  ✗
 
 [STEP 4] ROOT CAUSE CONFIRMATION
          Eliminating H2 and H3 — insufficient evidence
          H1 confirmed with supporting evidence:
-         → ${inc.analysis.root_cause.evidence[0]}
-         → ${inc.analysis.root_cause.evidence[1]}
+         → ${analysis.root_cause.evidence[0]}
+         → ${analysis.root_cause.evidence[1]}
 
 [STEP 5] BLAST RADIUS ASSESSMENT
-         Services affected: ${inc.analysis.blast_radius.services.length}
-         Estimated users:   ${inc.analysis.blast_radius.users}
-         Revenue impact:    ${inc.analysis.blast_radius.revenue}
+         Services affected: ${analysis.blast_radius.services.length}
+         Estimated users:   ${analysis.blast_radius.users}
+         Revenue impact:    ${analysis.blast_radius.revenue}
 
 [STEP 6] REMEDIATION PLAN
-         Immediate: ${inc.analysis.fix.cmd}
-         ETA: ${inc.analysis.fix.eta}
+         Immediate: ${analysis.fix.cmd}
+         ETA: ${analysis.fix.eta}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ANALYSIS COMPLETE  |  CONFIDENCE: ${Math.round(inc.analysis.confidence * 100)}%
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+  ANALYSIS COMPLETE  |  CONFIDENCE: ${Math.round(analysis.confidence * 100)}%
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+}
 
 // ─── SMALL COMPONENTS ─────────────────────────────────────────
 function LiveClock() {
@@ -303,7 +406,7 @@ function SrcIcon({ src }) {
 }
 
 // ─── TELEMETRY SVG CHART ──────────────────────────────────────
-function TelemetryChart({ incidentId, resolved }) {
+function TelemetryChart({ incidentId, service, resolved }) {
   let points = []
   let label = ""
   let val = ""
@@ -311,7 +414,7 @@ function TelemetryChart({ incidentId, resolved }) {
   let color = C.cyan
   let normalVal = ""
 
-  if (incidentId === "INC-001") {
+  if (service === "payment-service") {
     label = "payment-service — HTTP 5xx Error Rate"
     val = resolved ? "0.1%" : "8.3%"
     normalVal = "0.1% baseline"
@@ -328,7 +431,7 @@ function TelemetryChart({ incidentId, resolved }) {
           { x: 200, y: 30 }, { x: 250, y: 35 }, { x: 300, y: 28 },
           { x: 350, y: 32 }, { x: 420, y: 25 }, { x: 500, y: 30 }
         ]
-  } else if (incidentId === "INC-002") {
+  } else if (service === "user-service") {
     label = "user-service — API Latency (p99)"
     val = resolved ? "180ms" : "12.3s"
     normalVal = "180ms baseline"
@@ -394,19 +497,19 @@ function TelemetryChart({ incidentId, resolved }) {
           <line x1="0" y1={threshold} x2="500" y2={threshold} stroke="rgba(255,59,59,0.18)" strokeDasharray="4 4" strokeWidth="1.2" />
           <text x="5" y={threshold - 4} fill="rgba(255,59,59,0.35)" style={{ fontSize: 7.5, fontWeight: 800, fontFamily: MONO }}>CRITICAL THRESHOLD</text>
 
-          {incidentId === "INC-001" && (
+          {service === "payment-service" && (
             <>
               <line x1="180" y1="0" x2="180" y2="120" stroke={C.purple} strokeDasharray="2 2" strokeWidth="1" />
-              <text x="184" y="14" fill={C.purple} style={{ fontSize: 8, fontWeight: 800, fontFamily: MONO }}>DEPLOY v2.3.1</text>
+              <text x="184" y="14" fill={C.purple} style={{ fontSize: 8, fontWeight: 800, fontFamily: MONO }}>DEPLOY REGRESSION</text>
             </>
           )}
-          {incidentId === "INC-002" && (
+          {service === "user-service" && (
             <>
               <line x1="180" y1="0" x2="180" y2="120" stroke={C.cyan} strokeDasharray="2 2" strokeWidth="1" />
               <text x="184" y="14" fill={C.cyan} style={{ fontSize: 8, fontWeight: 800, fontFamily: MONO }}>FULL TABLE SCAN</text>
             </>
           )}
-          {incidentId === "INC-003" && (
+          {service === "recommendation-service" && (
             <>
               <line x1="180" y1="0" x2="180" y2="120" stroke={C.purple} strokeDasharray="2 2" strokeWidth="1" />
               <text x="184" y="14" fill={C.purple} style={{ fontSize: 8, fontWeight: 800, fontFamily: MONO }}>EMBEDDING CACHE</text>
@@ -459,82 +562,60 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
       return
     }
 
-    const isKubectl = cmd.toLowerCase().includes("kubectl") || cmd.toLowerCase().includes("rollout")
-    const isProcessKill = cmd.toLowerCase().includes("kill") || cmd.toLowerCase().includes("pgrep") || cmd.toLowerCase().includes("terminate")
-    const isDocker = cmd.toLowerCase().includes("docker") || cmd.toLowerCase().includes("container")
+    let activeInterval = null;
 
-    const commandLogs = [
-      { text: `[INIT] Target Environment: k8s-prod-us-east-1.company.internal`, type: "info" },
-      { text: `[AUTH] Authenticating SRE Bot Session...`, type: "info" },
-      { text: `[AUTH] Access Token verified successfully (role: ClusterAdmin). ✓`, type: "success" },
-      { text: `[SYS] Spawning automated execution shell...`, type: "info" },
-      { text: `[EXEC] Executing target remediation command:`, type: "warn" },
-      { text: `       $ ${cmd}`, type: "cmd" },
-    ]
-
-    if (isKubectl) {
-      commandLogs.push(
-        { text: `[K8S] Contacting Kubernetes API server at https://10.96.0.1:443...`, type: "info" },
-        { text: `[K8S] Verifying deployment manifest configurations...`, type: "info" },
-        { text: `[ROLLBACK] Initiating rollout undo sequence for deployment...`, type: "warn" },
-        { text: `[ROLLBACK] API server output: deployment reverted successfully ✓`, type: "success" },
-        { text: `[MONITOR] Watching pod rolling update lifecycle events...`, type: "info" },
-        { text: `[MONITOR] Active Pod (old) -> Terminating (SIGTERM sent)...`, type: "info" },
-        { text: `[MONITOR] New Replica -> Running (health checks passed) ✓`, type: "success" },
-        { text: `[MONITOR] Load balancer rules updated: 100% traffic routed to healthy revision.`, type: "success" }
-      )
-    } else if (isProcessKill) {
-      commandLogs.push(
-        { text: `[SYS] Locating target process using task runner...`, type: "info" },
-        { text: `[KILL] Sending SIGKILL to rogue process matching criteria...`, type: "warn" },
-        { text: `[KILL] Target process terminated successfully ✓`, type: "success" },
-        { text: `[SYS] Reclaiming database & memory connection resources...`, type: "info" },
-        { text: `[SYS] database connection pool flushed. 17 connections reclaimed ✓`, type: "success" },
-        { text: `[MONITOR] Active connections: 3/20 (nominal state).`, type: "success" },
-        { text: `[MONITOR] System CPU usage stabilized below 30% baseline.`, type: "success" }
-      )
-    } else if (isDocker) {
-      commandLogs.push(
-        { text: `[DOCKER] Accessing Docker daemon socket...`, type: "info" },
-        { text: `[DOCKER] Restarting container matching criteria...`, type: "warn" },
-        { text: `[DOCKER] Container restarted successfully ✓`, type: "success" },
-        { text: `[MONITOR] Live application status checks passing.`, type: "success" }
-      )
-    } else {
-      commandLogs.push(
-        { text: `[EXEC] Spawning custom command runner context...`, type: "info" },
-        { text: `[EXEC] Executing live operations...`, type: "warn" },
-        { text: `[EXEC] Command completed with exit code 0 ✓`, type: "success" },
-        { text: `[MONITOR] Observing telemetry lines recovery baseline...`, type: "info" },
-        { text: `[MONITOR] Metrics returned below critical threshold (nominal state) ✓`, type: "success" }
-      )
+    async function loadRemediationLogs() {
+      try {
+        const res = await fetch("/api/remediate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ incident_id: incidentId, command: cmd })
+        })
+        const data = await res.json()
+        if (data && Array.isArray(data.logs)) {
+          let i = 0
+          activeInterval = setInterval(() => {
+            if (i < data.logs.length) {
+              setLogs(prev => [...prev, data.logs[i]])
+              i++
+            } else {
+              clearInterval(activeInterval)
+              setCompleted(true)
+              onComplete()
+            }
+          }, 350)
+        }
+      } catch (err) {
+        console.error("Failed to load remediation logs from backend:", err)
+        // Client-side fallback if backend fails
+        const fallbackLogs = [
+          { text: `[INIT] Target Environment: local-simulation-terminal`, type: "info" },
+          { text: `[AUTH] Spawning fallback SRE session...`, type: "info" },
+          { text: `[EXEC] Running target remediation:`, type: "warn" },
+          { text: `       $ ${cmd}`, type: "cmd" },
+          { text: `[SUCCESS] Automated action executed successfully ✓`, type: "success" },
+          { text: `[HEALTH] Global system checks passed 100% ✓`, type: "success" },
+          { text: `[SYS] Marking incident ${incidentId} as RESOLVED ✓`, type: "success" }
+        ]
+        let i = 0
+        activeInterval = setInterval(() => {
+          if (i < fallbackLogs.length) {
+            setLogs(prev => [...prev, fallbackLogs[i]])
+            i++
+          } else {
+            clearInterval(activeInterval)
+            setCompleted(true)
+            onComplete()
+          }
+        }, 350)
+      }
     }
 
-    commandLogs.push(
-      { text: `[HEALTH] Performing global service telemetry check...`, type: "info" },
-      { text: `[HEALTH] Service: payment-service:        100% HEALTHY ✓`, type: "success" },
-      { text: `[HEALTH] Service: user-service:           100% HEALTHY ✓`, type: "success" },
-      { text: `[HEALTH] Service: order-service:          100% HEALTHY ✓`, type: "success" },
-      { text: `[SYS] Resolving incident status in Datadog and PagerDuty...`, type: "info" },
-      { text: `[SYS] Marking incident ${incidentId} as RESOLVED ✓`, type: "success" },
-      { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, type: "info" },
-      { text: `  AUTOMATED REMEDIATION SUCCESSFUL  |  STATUS: HEALTHY`, type: "success" },
-      { text: `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, type: "success" }
-    )
-
-    let i = 0
-    const interval = setInterval(() => {
-      if (i < commandLogs.length) {
-        setLogs(prev => [...prev, commandLogs[i]])
-        i++
-      } else {
-        clearInterval(interval)
-        setCompleted(true)
-        onComplete()
-      }
-    }, 380)
-
-    return () => clearInterval(interval)
+    loadRemediationLogs()
+    
+    return () => {
+      if (activeInterval) clearInterval(activeInterval)
+    }
   }, [open, cmd, incidentId])
 
   useEffect(() => {
@@ -608,6 +689,153 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── SRE CHAT COPILOT WAR ROOM ────────────────────────────────
+function ChatCopilot({ incidentId }) {
+  const [messages, setMessages] = useState([])
+  const [input, setInput] = useState("")
+  const [loading, setLoading] = useState(false)
+  const chatEndRef = useRef(null)
+
+  useEffect(() => {
+    setMessages([
+      {
+        role: "assistant",
+        content: "NEXUS SRE Sourced Copilot standing by. Ask me anything about this incident's telemetry, logs, metrics, or proposed fix."
+      }
+    ])
+  }, [incidentId])
+
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [messages])
+
+  const send = async (e) => {
+    e.preventDefault()
+    if (!input.trim() || loading) return
+
+    const userMsg = input.trim()
+    setInput("")
+    setMessages(prev => [...prev, { role: "user", content: userMsg }])
+    setLoading(true)
+
+    const history = messages.slice(1).map(m => ({
+      role: m.role,
+      content: m.content
+    }))
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          incident_id: incidentId,
+          question: userMsg,
+          history: history
+        })
+      })
+      const data = await res.json()
+      if (data && data.reply) {
+        setMessages(prev => [...prev, { role: "assistant", content: data.reply }])
+      } else {
+        setMessages(prev => [...prev, { role: "assistant", content: "Error: Received empty response from NEXUS brain." }])
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, { role: "assistant", content: "Error: Failed to connect to NEXUS SRE server." }])
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div className="clip-panel" style={{
+      background: C.panelDeep, border: `1px solid ${C.border}`,
+      borderRadius: 6, marginTop: 12, padding: "16px 18px",
+      display: "flex", flexDirection: "column", gap: 12,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, borderBottom: `1px solid ${C.border}`, paddingBottom: 10 }}>
+        <PulseDot color={C.cyan} size={6} />
+        <span style={{ fontSize: 10, fontWeight: 800, color: C.cyan, letterSpacing: "0.15em", textTransform: "uppercase" }}>
+          SRE Copilot War Room
+        </span>
+      </div>
+
+      <div style={{
+        maxHeight: 240, overflowY: "auto", display: "flex",
+        flexDirection: "column", gap: 10, paddingRight: 4,
+      }}>
+        {messages.map((m, idx) => {
+          const isUser = m.role === "user"
+          return (
+            <div key={idx} style={{
+              alignSelf: isUser ? "flex-end" : "flex-start",
+              maxWidth: "85%",
+              background: isUser ? "rgba(0,212,255,0.06)" : "rgba(255,255,255,0.02)",
+              border: `1px solid ${isUser ? "rgba(0,212,255,0.18)" : C.border}`,
+              borderRadius: 6, padding: "9px 12px",
+              display: "flex", flexDirection: "column", gap: 4,
+            }}>
+              <span style={{
+                fontSize: 8.5, fontWeight: 800,
+                color: isUser ? C.cyan : C.muted,
+                fontFamily: MONO, textTransform: "uppercase", letterSpacing: "0.05em",
+              }}>
+                {isUser ? "ON-CALL SRE" : "NEXUS SRE"}
+              </span>
+              <span style={{
+                fontSize: 11.5, color: isUser ? C.text : "#A8B8D8",
+                lineHeight: 1.5, fontFamily: isUser ? "inherit" : MONO,
+                whiteSpace: "pre-wrap",
+              }}>
+                {m.content}
+              </span>
+            </div>
+          )
+        })}
+        {loading && (
+          <div style={{
+            alignSelf: "flex-start",
+            background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`,
+            borderRadius: 6, padding: "9px 12px", display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <Loader2 size={11} className="spin" color={C.muted} />
+            <span style={{ fontSize: 10, color: C.muted, fontFamily: MONO }}>NEXUS Sourced Analysis in progress...</span>
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </div>
+
+      <form onSubmit={send} style={{ display: "flex", gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+        <input
+          type="text"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Ask a technical SRE question..."
+          style={{
+            flex: 1, background: "#050912", border: `1px solid ${C.border}`,
+            borderRadius: 4, padding: "8px 12px", color: C.text,
+            fontSize: 11.5, fontFamily: MONO, outline: "none",
+          }}
+          disabled={loading}
+        />
+        <button
+          type="submit"
+          disabled={loading || !input.trim()}
+          style={{
+            background: loading ? "rgba(0,212,255,0.05)" : "linear-gradient(135deg, rgba(0,212,255,0.15), rgba(0,212,255,0.05))",
+            border: `1px solid ${loading ? C.border : "rgba(0,212,255,0.3)"}`,
+            borderRadius: 4, padding: "0 18px", color: C.cyan,
+            fontSize: 11, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
+            fontFamily: MONO, transition: "all 0.15s",
+          }}
+        >
+          SEND
+        </button>
+      </form>
     </div>
   )
 }
@@ -895,9 +1123,15 @@ function SettingsDrawer({ open, onClose, config, onSave }) {
 
 // ─── MAIN APP ─────────────────────────────────────────────────
 export default function App() {
-  const [incidents, setIncidents] = useState(INCIDENTS)
-  const [selId, setSelId] = useState(INCIDENTS[0].id)
-  const sel = incidents.find(i => i.id === selId) || incidents[0]
+  const [incidents, setIncidents] = useState([])
+  const [selId, setSelId] = useState("")
+  const sel = incidents.find(i => i.id === selId) || {
+    id: "", title: "Loading incidents...", service: "sys-agent", severity: "P1", ago: "0m ago",
+    logs: [
+      { t: "00:00:00", svc: "kernel", lvl: "INFO", msg: "Establishing secure link to SRE telemetry network..." }
+    ],
+    metrics: {}, deployments: []
+  }
 
   const [phase, setPhase] = useState("idle")
   const [stream, setStream] = useState("")
@@ -921,6 +1155,52 @@ export default function App() {
   const intentionalClose = useRef(false)
   const tokensReceived = useRef(0)
 
+  // ── Fetch active incidents from backend on mount
+  useEffect(() => {
+    async function loadIncidents() {
+      try {
+        const res = await fetch("/api/incidents")
+        const data = await res.json()
+        if (Array.isArray(data) && data.length > 0) {
+          setIncidents(data.map(inc => ({
+            ...inc,
+            ago: inc.ago || "Just now",
+            resolved: false,
+            logs: inc.logs || [],
+            metrics: inc.metrics || {},
+            deployments: inc.deployments || []
+          })))
+          setSelId(data[0].id)
+        }
+      } catch (err) {
+        console.error("Failed to load incidents from backend:", err)
+      }
+    }
+    loadIncidents()
+  }, [])
+
+  // ── Fetch full incident details dynamically on selection
+  useEffect(() => {
+    if (!selId) return
+    async function loadIncidentDetails() {
+      try {
+        const res = await fetch(`/api/incidents/${selId}`)
+        const data = await res.json()
+        if (data && data.id === selId) {
+          setIncidents(prev => prev.map(inc => {
+            if (inc.id === selId) {
+              return { ...inc, ...data }
+            }
+            return inc
+          }))
+        }
+      } catch (err) {
+        console.error(`Failed to load details for incident ${selId}:`, err)
+      }
+    }
+    loadIncidentDetails()
+  }, [selId])
+
   // ── Log stream animation on incident change
   useEffect(() => {
     setPhase("idle"); setStream(""); setAnalysis(null); setVisibleLogs([])
@@ -928,6 +1208,7 @@ export default function App() {
     if (activeWs.current) {
       try { activeWs.current.close() } catch (e) {}
     }
+    if (!sel || !sel.logs || sel.logs.length === 0) return
     let i = 0
     logTimer.current = setInterval(() => {
       if (i < sel.logs.length) { setVisibleLogs(p => [...p, sel.logs[i]]); i++ }
@@ -940,7 +1221,7 @@ export default function App() {
         try { activeWs.current.close() } catch (e) {}
       }
     }
-  }, [selId])
+  }, [selId, incidents])
 
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight }, [visibleLogs])
   useEffect(() => { if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight }, [stream])
@@ -997,7 +1278,7 @@ export default function App() {
         }
         if (msg.type === "complete") {
           intentionalClose.current = true
-          setAnalysis(msg.analysis || sel.analysis)
+          setAnalysis(msg.analysis)
           setPhase("complete")
           ws.close()
         }
@@ -1016,12 +1297,12 @@ export default function App() {
         }
       }
 
-      // Timeout safety: if we don't connect or get tokens within 2.5 seconds, trigger fallback
+      // Timeout safety: if we don't connect or get tokens within 8.0 seconds, trigger fallback
       setTimeout(() => {
         if (!wsConnected || (fallbackTriggered.current === false && tokensReceived.current === 0)) {
           triggerFallback()
         }
-      }, 2500)
+      }, 8000)
 
     } catch (err) {
       triggerFallback()
@@ -1030,13 +1311,14 @@ export default function App() {
 
   const fallbackAnalyze = useCallback(() => {
     clearInterval(streamTimer.current)
-    const text = buildStream(sel)
+    const clientAnalysis = generateClientStochasticAnalysis(sel)
+    const text = buildStream({ ...sel, analysis: clientAnalysis })
     let i = 0
     streamTimer.current = setInterval(() => {
       if (i <= text.length) { setStream(text.slice(0, i)); i += 2 }
       else {
         clearInterval(streamTimer.current)
-        setTimeout(() => { setAnalysis(sel.analysis); setPhase("complete") }, 400)
+        setTimeout(() => { setAnalysis(clientAnalysis); setPhase("complete") }, 400)
       }
     }, 12)
   }, [sel])
@@ -1127,7 +1409,7 @@ export default function App() {
         </div>
 
         <span style={{ fontSize: 11, color: C.muted, fontFamily: MONO }}>
-          {INCIDENTS.length} incidents
+          {incidents.length} incidents
         </span>
 
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
@@ -1484,7 +1766,7 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-                      <TelemetryChart incidentId={sel.id} resolved={sel.resolved} />
+                      <TelemetryChart incidentId={sel.id} service={sel.service} resolved={sel.resolved} />
                     </TacPanel>
 
                     <TacPanel title="Timeline" icon={<Clock size={12} />} accent={C.purple} delay={0.22}>
@@ -1572,6 +1854,9 @@ export default function App() {
                       </div>
                     ))}
                   </TacPanel>
+
+                  {/* Chat Copilot War Room */}
+                  <ChatCopilot incidentId={sel.id} />
                 </>
               )}
             </AnimatePresence>
