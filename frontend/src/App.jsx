@@ -406,7 +406,9 @@ function SrcIcon({ src }) {
 }
 
 // ─── TELEMETRY SVG CHART ──────────────────────────────────────
-function TelemetryChart({ incidentId, service, resolved }) {
+function TelemetryChart({ incident, resolved }) {
+  const service = incident?.service;
+  const incidentId = incident?.id;
   let points = []
   let label = ""
   let val = ""
@@ -416,7 +418,8 @@ function TelemetryChart({ incidentId, service, resolved }) {
 
   if (service === "payment-service") {
     label = "payment-service — HTTP 5xx Error Rate"
-    val = resolved ? "0.1%" : "8.3%"
+    const currentVal = incident?.metrics?.payment_error_rate?.value ?? 8.5;
+    val = resolved ? "0.1%" : `${currentVal}%`
     normalVal = "0.1% baseline"
     threshold = 80
     color = resolved ? C.green : C.red
@@ -433,7 +436,8 @@ function TelemetryChart({ incidentId, service, resolved }) {
         ]
   } else if (service === "user-service") {
     label = "user-service — API Latency (p99)"
-    val = resolved ? "180ms" : "12.3s"
+    const latencyVal = incident?.metrics?.api_latency_p99_ms?.value ?? 12300;
+    val = resolved ? "180ms" : `${(latencyVal / 1000).toFixed(1)}s`
     normalVal = "180ms baseline"
     threshold = 90
     color = resolved ? C.green : C.amber
@@ -450,7 +454,8 @@ function TelemetryChart({ incidentId, service, resolved }) {
         ]
   } else {
     label = "recommendation-service — JVM Heap Memory"
-    val = resolved ? "1.2 GB" : "4.0 GB"
+    const heapVal = incident?.metrics?.heap_gb?.value ?? 4.0;
+    val = resolved ? "1.2 GB" : `${heapVal.toFixed(1)} GB`
     normalVal = "1.2 GB baseline"
     threshold = 40
     color = resolved ? C.green : C.amber
@@ -565,6 +570,28 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
     let activeInterval = null;
 
     async function loadRemediationLogs() {
+      // Print bootstrap sequence immediately to keep SRE engaged and prevent empty consoles
+      const initialLogs = [
+        { text: `[INIT] Target Environment Cluster: k8s-prod-us-east-1.nexus.net`, type: "info" },
+        { text: `[AUTH] Spawning automated SRE operational subsession (user: nexus-bot-executor)...`, type: "info" },
+        { text: `[AUTH] Session credentials approved (RBAC policies: ClusterAdmin, WriteAccess) ✓`, type: "success" },
+        { text: `[SYS] Initializing operations context in namespace: prod-core`, type: "info" },
+        { text: `[EXEC] Running target remediation action:`, type: "warn" },
+        { text: `       $ ${cmd}`, type: "cmd" },
+        { text: `[EXEC] Contacting Kubernetes API control plane & executing live analysis...`, type: "info" }
+      ]
+      
+      // Animate the initial logs typing out quickly (100ms per line) so it feels super interactive
+      let initIdx = 0;
+      const initTimer = setInterval(() => {
+        if (initIdx < initialLogs.length) {
+          setLogs(prev => [...prev, initialLogs[initIdx]])
+          initIdx++
+        } else {
+          clearInterval(initTimer)
+        }
+      }, 100)
+
       try {
         const res = await fetch("/api/remediate", {
           method: "POST",
@@ -572,21 +599,38 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
           body: JSON.stringify({ incident_id: incidentId, command: cmd })
         })
         const data = await res.json()
+        
+        // Wait until initial logs animation finishes before drawing backend logs
+        clearInterval(initTimer)
+        
         if (data && Array.isArray(data.logs)) {
+          // Exclude any duplicate bootstrap logs the backend might return
+          const backendLogs = data.logs.filter(log => 
+            !log.text.includes("[INIT]") && 
+            !log.text.includes("[AUTH]") && 
+            !log.text.includes("$") &&
+            !log.text.includes("[SYS] Initializing operations") &&
+            !log.text.includes("[EXEC] Executing target")
+          )
+          
+          // Render bootstrap sequence instantly in full if it didn't finish animating
+          setLogs(initialLogs)
+          
           let i = 0
           activeInterval = setInterval(() => {
-            if (i < data.logs.length) {
-              setLogs(prev => [...prev, data.logs[i]])
+            if (i < backendLogs.length) {
+              setLogs(prev => [...prev, backendLogs[i]])
               i++
             } else {
               clearInterval(activeInterval)
               setCompleted(true)
               onComplete()
             }
-          }, 350)
+          }, 300)
         }
       } catch (err) {
         console.error("Failed to load remediation logs from backend:", err)
+        clearInterval(initTimer)
         // Client-side fallback if backend fails
         const fallbackLogs = [
           { text: `[INIT] Target Environment: local-simulation-terminal`, type: "info" },
@@ -1221,7 +1265,7 @@ export default function App() {
         try { activeWs.current.close() } catch (e) {}
       }
     }
-  }, [selId, incidents])
+  }, [selId, sel?.logs])
 
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight }, [visibleLogs])
   useEffect(() => { if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight }, [stream])
@@ -1766,7 +1810,7 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-                      <TelemetryChart incidentId={sel.id} service={sel.service} resolved={sel.resolved} />
+                      <TelemetryChart incident={sel} resolved={sel.resolved} />
                     </TacPanel>
 
                     <TacPanel title="Timeline" icon={<Clock size={12} />} accent={C.purple} delay={0.22}>

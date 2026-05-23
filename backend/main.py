@@ -80,6 +80,7 @@ Output Rules (non-negotiable):
 - severity: P0 (critical) | P1 (high) | P2 (medium) | P3 (low)
 - Never say "I think" or "maybe" — speak with expert authority
 - Every claim must cite a specific log line, timestamp, or metric
+- You MUST use the EXACT error rates, database connection counts, latency figures, memory sizes, version numbers, and commit hashes provided in the context logs and metrics. DO NOT hallucinate, fabricate, or fallback to generic percentages or numbers (such as 8.5% or 8.3%) under any circumstances. If the payment error rate in the metrics is 10.6%, your analysis and evidence must strictly reflect 10.6%.
 
 Output format:
 <analysis>
@@ -117,7 +118,7 @@ def generate_stochastic_incidents():
     """Generate 3 highly detailed incidents with relative timestamps and fully dynamic metrics."""
     now = datetime.now()
     
-    # Incident 1: Payment Gateway Regression
+    # ─── Incident 1: Payment Gateway Regression
     inc1_id = f"INC-{random.randint(100, 299)}"
     t_minus_15 = (now - timedelta(minutes=15)).strftime("%H:%M:%S")
     t_minus_14 = (now - timedelta(minutes=14)).strftime("%H:%M:%S")
@@ -132,9 +133,14 @@ def generate_stochastic_incidents():
     pr_num = f"#{random.randint(4000, 9999)}"
     commit_hash = f"a{random.randint(100000, 999999)}"
     
+    # Assign single dynamic value to resolve inconsistency
+    inc1_error_rate = round(random.uniform(7.8, 12.5), 1)
+    inc1_latency = random.randint(3800, 5200)
+    inc1_orders = random.randint(8, 15)
+    
     inc1 = {
         "id": inc1_id,
-        "title": f"Payment Service HTTP 500 Spike (Error Rate {random.uniform(7.8, 12.5):.1f}%)",
+        "title": f"Payment Service HTTP 500 Spike (Error Rate {inc1_error_rate}%)",
         "service": "payment-service",
         "severity": "P0",
         "ago": "2m ago",
@@ -146,19 +152,19 @@ def generate_stochastic_incidents():
             {"t": t_minus_10, "svc": "payment-service", "lvl": "ERROR", "msg": f"NullPointerException: charge() failed for payload={{billing_address=null}} [+342 similar failures]"},
             {"t": t_minus_8, "svc": "api-gateway", "lvl": "WARN", "msg": "payment-service upstream status changed: circuit breaker OPEN"},
             {"t": t_minus_5, "svc": "order-service", "lvl": "ERROR", "msg": "Failed to authorize cart transaction: upstream payment-service unresponsive"},
-            {"t": t_minus_2, "svc": "alertmanager", "lvl": "ALERT", "msg": f"FIRING: PaymentFailedRate={random.uniform(7.8, 12.5):.1f}% (critical threshold 5.0%)"}
+            {"t": t_minus_2, "svc": "alertmanager", "lvl": "ALERT", "msg": f"FIRING: PaymentFailedRate={inc1_error_rate}% (critical threshold 5.0%)"}
         ],
         "metrics": {
-            "payment_error_rate": {"value": round(random.uniform(7.8, 12.5), 1), "unit": "%", "threshold": 5.0},
-            "api_latency_p99_ms": {"value": random.randint(3800, 5200), "normal": 180},
-            "orders_per_minute": {"value": random.randint(8, 15), "normal": 340}
+            "payment_error_rate": {"value": inc1_error_rate, "unit": "%", "threshold": 5.0},
+            "api_latency_p99_ms": {"value": inc1_latency, "normal": 180},
+            "orders_per_minute": {"value": inc1_orders, "normal": 340}
         },
         "deployments": [
             {"time": t_minus_15, "service": "payment-service", "version": version_new, "author": random.choice(["sarah.dev", "alex.ops", "kyle.m"]), "pr": pr_num, "change": f"Refactored optional billing fields handling in charge pipeline"}
         ]
     }
     
-    # Incident 2: DB Lock Contention
+    # ─── Incident 2: DB Lock Contention
     inc2_id = f"INC-{random.randint(300, 599)}"
     t2_minus_20 = (now - timedelta(minutes=20)).strftime("%H:%M:%S")
     t2_minus_15 = (now - timedelta(minutes=15)).strftime("%H:%M:%S")
@@ -167,30 +173,35 @@ def generate_stochastic_incidents():
     t2_minus_5 = (now - timedelta(minutes=5)).strftime("%H:%M:%S")
     t2_minus_2 = (now - timedelta(minutes=2)).strftime("%H:%M:%S")
     
+    # Assign single dynamic value to resolve inconsistency
+    inc2_latency_sec = round(random.uniform(10.5, 14.8), 1)
+    inc2_waiting_conns = random.randint(30, 60)
+    inc2_cpu_percent = random.randint(88, 97)
+    
     inc2 = {
         "id": inc2_id,
-        "title": f"API P99 Latency Critical (Spike to {random.uniform(10.5, 14.8):.1f}s)",
+        "title": f"API P99 Latency Critical (Spike to {inc2_latency_sec}s)",
         "service": "user-service",
         "severity": "P1",
         "ago": "14m ago",
         "logs": [
-            {"t": t2_minus_20, "svc": "user-service", "lvl": "WARN", "msg": "Database connection pool threshold warning: 18/20 connections in use"},
+            {"t": t2_minus_20, "svc": "user-service", "lvl": "WARN", "msg": f"Database connection pool threshold warning: 18/20 connections in use"},
             {"t": t2_minus_15, "svc": "product-service", "lvl": "WARN", "msg": "Upstream user-service response slow (3200ms wait)"},
             {"t": t2_minus_10, "svc": "analytics-runner", "lvl": "INFO", "msg": "Triggered offline analytics report: scanning orders table (45.2M rows)"},
-            {"t": t2_minus_8, "svc": "user-service", "lvl": "WARN", "msg": f"Database thread pool exhausted. Waiting connections: {random.randint(30, 60)}"},
+            {"t": t2_minus_8, "svc": "user-service", "lvl": "WARN", "msg": f"Database thread pool exhausted. Waiting connections: {inc2_waiting_conns}"},
             {"t": t2_minus_5, "svc": "user-service", "lvl": "ERROR", "msg": "Transaction timeout after 5000ms: failed to acquire shared lock"},
-            {"t": t2_minus_2, "svc": "alertmanager", "lvl": "ALERT", "msg": f"FIRING: API P99 Latency is {random.uniform(10.5, 14.8):.1f} seconds (critical threshold 2.0s)"}
+            {"t": t2_minus_2, "svc": "alertmanager", "lvl": "ALERT", "msg": f"FIRING: API P99 Latency is {inc2_latency_sec} seconds (critical threshold 2.0s)"}
         ],
         "metrics": {
             "db_active_connections": {"value": 20, "max_pool": 20},
-            "db_waiting_connections": {"value": random.randint(30, 60)},
-            "api_latency_p99_ms": {"value": int(random.uniform(10.5, 14.8) * 1000), "normal": 180},
-            "db_cpu_percent": {"value": random.randint(88, 97), "normal": 25}
+            "db_waiting_connections": {"value": inc2_waiting_conns},
+            "api_latency_p99_ms": {"value": int(inc2_latency_sec * 1000), "normal": 180},
+            "db_cpu_percent": {"value": inc2_cpu_percent, "normal": 25}
         },
         "deployments": []
     }
     
-    # Incident 3: JVM Memory Leak
+    # ─── Incident 3: JVM Memory Leak
     inc3_id = f"INC-{random.randint(600, 999)}"
     t3_minus_40 = (now - timedelta(minutes=40)).strftime("%H:%M:%S")
     t3_minus_30 = (now - timedelta(minutes=30)).strftime("%H:%M:%S")
@@ -201,6 +212,13 @@ def generate_stochastic_incidents():
     
     cache_version = f"v1.{random.randint(7, 9)}.{random.randint(0, 9)}"
     
+    # Assign single dynamic values to resolve inconsistency
+    inc3_heap_trend1 = round(random.uniform(1.1, 1.4), 1)
+    inc3_heap_trend2 = round(random.uniform(2.2, 2.5), 1)
+    inc3_heap_trend3 = round(random.uniform(3.4, 3.7), 1)
+    inc3_gc_pause = random.randint(3800, 4800)
+    inc3_restarts = random.randint(3, 6)
+    
     inc3 = {
         "id": inc3_id,
         "title": "recommendation-service JVM Memory Leak & OOMKilled",
@@ -208,17 +226,17 @@ def generate_stochastic_incidents():
         "severity": "P2",
         "ago": "1h ago",
         "logs": [
-            {"t": t3_minus_40, "svc": "recommendation-service", "lvl": "INFO", "msg": f"Heap utilization trending: {random.uniform(1.1, 1.4):.1f}GB / 4.0GB (nominal)"},
-            {"t": t3_minus_30, "svc": "recommendation-service", "lvl": "INFO", "msg": f"Heap utilization trending: {random.uniform(2.2, 2.5):.1f}GB / 4.0GB (elevated GC active)"},
-            {"t": t3_minus_20, "svc": "recommendation-service", "lvl": "WARN", "msg": f"GC pause time exceeded warning: GC active for 4.2 seconds, heap at {random.uniform(3.4, 3.7):.1f}GB"},
+            {"t": t3_minus_40, "svc": "recommendation-service", "lvl": "INFO", "msg": f"Heap utilization trending: {inc3_heap_trend1}GB / 4.0GB (nominal)"},
+            {"t": t3_minus_30, "svc": "recommendation-service", "lvl": "INFO", "msg": f"Heap utilization trending: {inc3_heap_trend2}GB / 4.0GB (elevated GC active)"},
+            {"t": t3_minus_20, "svc": "recommendation-service", "lvl": "WARN", "msg": f"GC pause time exceeded warning: GC active for 4.2 seconds, heap at {inc3_heap_trend3}GB"},
             {"t": t3_minus_15, "svc": "recommendation-service", "lvl": "ERROR", "msg": "java.lang.OutOfMemoryError: GC overhead limit exceeded"},
             {"t": t3_minus_10, "svc": "kubernetes-node", "lvl": "ERROR", "msg": "Killed container recommendation-service (exit code 137 - OOMKilled)"},
             {"t": t3_minus_5, "svc": "api-gateway", "lvl": "WARN", "msg": "Failed to route traffic to recommendation-service: 503 Service Unavailable (cold startup)"}
         ],
         "metrics": {
-            "gc_pause_ms": {"value": random.randint(3800, 4800), "normal": 40},
+            "gc_pause_ms": {"value": inc3_gc_pause, "normal": 40},
             "heap_gb": {"value": 4.0, "normal": 1.2},
-            "pod_restarts_24h": {"value": random.randint(3, 6)}
+            "pod_restarts_24h": {"value": inc3_restarts}
         },
         "deployments": [
             {"time": t3_minus_40, "service": "recommendation-service", "version": cache_version, "author": "john.ops", "pr": f"#{random.randint(1000, 3999)}", "change": "Enabled unbounded in-memory embedding cache for recommendation weights"}
@@ -241,57 +259,113 @@ def generate_stochastic_analysis_backup(incident: dict) -> dict:
     title = incident.get("title", "Outage")
     service = incident.get("service", "service")
     
+    # Extract dynamic log errors for evidence
+    err_logs = [
+        f"Log anomaly: [{log['lvl']}] {log['svc']}: '{log['msg']}'"
+        for log in incident.get("logs", [])
+        if log["lvl"] in ["ERROR", "WARN", "ALERT", "FATAL"]
+    ]
+    if len(err_logs) < 2:
+        err_logs = [
+            f"Telemetry metric anomaly reported by alertmanager dashboard",
+            f"Service {service} breached nominal operating bounds"
+        ]
+
     if service == "payment-service":
         cat = "deployment_regression"
-        root_cause_sum = "A critical NullPointerException occurred in PaymentProcessor.charge() at line 247. This regression was introduced by the latest deployment which refactored Optional fields in the payload and removed null-guards for billing addresses. When transactions without a saved address are processed, the application crashes, causing a circuit breaker trip on the gateway and cascading checkout failures."
-        comp = "payment-service → PaymentProcessor.charge():247"
+        
+        # Pull dynamic values from incident
+        inc1_error_rate = incident.get('metrics', {}).get('payment_error_rate', {}).get('value', 8.5)
+        inc1_latency = incident.get('metrics', {}).get('api_latency_p99_ms', {}).get('value', 4800)
+        inc1_orders = incident.get('metrics', {}).get('orders_per_minute', {}).get('value', 10)
+        
+        deploy = incident.get("deployments", [{}])[0] if incident.get("deployments") else {}
+        version = deploy.get("version", "v2.3.15")
+        commit = deploy.get("pr", "#9608")
+        author = deploy.get("author", "sarah.dev")
+        change_desc = deploy.get("change", "Refactored payment fields")
+        
+        root_cause_sum = (
+            f"A critical NullPointerException occurred in PaymentProcessor.charge() at line 247 in com.nexus.billing.Processor. "
+            f"This regression was introduced by the recent deployment {version} (commit {commit}) authored by {author} for the PR related to: "
+            f"'{change_desc}'. Because nullable billing address fields are no longer null-checked in the charge pipeline, transactions without a "
+            f"saved billing profile crash. This causes an HTTP 500 error rate spike to {inc1_error_rate}%, tripping gateway circuit breakers."
+        )
+        comp = "payment-service → com.nexus.billing.Processor.charge():247"
         evidence = [
-            f"HTTP 500 error rate spiked to {incident.get('metrics', {}).get('payment_error_rate', {}).get('value', 8.5)}% immediately following rollout",
-            "Circuit breaker tripped to OPEN state at api-gateway level",
-            "100% of NullPointerExceptions trace back to missing optional billing_address parameter in PR merge history"
+            f"HTTP 5xx error rate spiked to {inc1_error_rate}% immediately following deployment completion of {version}",
+            f"API gateway P99 latency degraded to {inc1_latency}ms as threads queued up behind failing sockets",
+            f"100% of NullPointerExceptions trace back to missing optional billing_address parameter in PR {commit}"
         ]
         blast_services = ["payment-service", "api-gateway", "order-service"]
-        users_affected = "~12,400 active SRE sessions"
-        revenue_loss = f"${random.randint(80, 110)} / min"
+        users_affected = f"~{int(inc1_orders * inc1_error_rate * 15):,} active user sessions"
+        revenue_loss = f"${round((inc1_error_rate / 100.0) * inc1_orders * 150.0, 2)} / min"
         fix_cmd = "kubectl rollout undo deployment/payment-service"
         fix_eta = "~3 min"
         prevention = [
-            {"text": "Add mandatory null-safety static analysis and execution unit tests in the CI pipeline before merge.", "priority": "HIGH"},
-            {"text": "Establish a progressive canary deployment flow (2% -> 10% -> 50% -> 100%) with automated rollbacks.", "priority": "HIGH"},
-            {"text": "Refactor PaymentProcessor optional argument mappings using optional wrapper libraries.", "priority": "MED"}
+            {"text": "Implement static null-guard validation checks in compile CI pipelines for billing payloads.", "priority": "HIGH"},
+            {"text": "Establish automated canary progressive rollout gates (2% -> 10% -> 100%) with metric-based rollbacks.", "priority": "HIGH"},
+            {"text": "Add contract verification schema tests for billing addresses in gateway upstream handlers.", "priority": "MED"}
         ]
     elif service == "user-service":
         cat = "resource_exhaustion"
-        root_cause_sum = "The database connection pool has been completely starved by an offline analytics query executing a full table scan on the orders table. The query read over 45M rows without indexes or limit constraints, capturing all 20 pooled database handles and locking crucial schemas. Upstream APIs queued up and timed out after 5 seconds."
+        
+        # Pull dynamic values from incident
+        db_waiting_conns = incident.get('metrics', {}).get('db_waiting_connections', {}).get('value', 47)
+        db_cpu = incident.get('metrics', {}).get('db_cpu_percent', {}).get('value', 95)
+        api_lat = incident.get('metrics', {}).get('api_latency_p99_ms', {}).get('value', 12300)
+        
+        root_cause_sum = (
+            f"The database connection pool has been completely starved by an offline analytics scan query executing a full table scan "
+            f"on the orders table. The query read over 45M rows without indexes or limit constraints, capturing all 20 pooled database handles "
+            f"and locking crucial schemas. This has caused db CPU to spike to {db_cpu}%, and left {db_waiting_conns} connections waiting in the "
+            f"pool queue, causing upstream API latency to rise to {api_lat}ms."
+        )
         comp = "analytics-runner → orders table full scan → DB pool starvation"
         evidence = [
-            "Active connections locked at 20/20 maximum pool size limit",
-            f"Waiting database connections spiked to {incident.get('metrics', {}).get('db_waiting_connections', {}).get('value', 47)} requests",
-            f"DB CPU consumption locked at {incident.get('metrics', {}).get('db_cpu_percent', {}).get('value', 95)}%"
+            f"Active connections locked at 20/20 maximum pool size limit",
+            f"Waiting database connections spiked to {db_waiting_conns} requests, exhausting user-service thread pool",
+            f"DB CPU consumption locked at {db_cpu}% during table scan executions"
         ]
         blast_services = ["user-service", "product-service", "analytics-runner"]
-        users_affected = "~8,500 active SRE sessions"
-        revenue_loss = f"${random.randint(40, 65)} / min"
+        users_affected = f"~{int(db_waiting_conns * 180):,} blocked SRE sessions"
+        revenue_loss = f"${round(db_waiting_conns * 1.62, 2)} / min"
         fix_cmd = "kill -9 $(pgrep analytics) && psql -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE '%orders%';\""
         fix_eta = "~2 min"
         prevention = [
-            {"text": "Migrate all offline reporting queries and batch jobs to a read replica instance.", "priority": "HIGH"},
-            {"text": "Implement dedicated connection pools (e.g. max 5) for reporting tools, isolating them from front-end traffic.", "priority": "HIGH"},
+            {"text": "Migrate all offline reporting queries and batch jobs to a read replica database instance.", "priority": "HIGH"},
+            {"text": "Implement dedicated connection pools (e.g. max pool size 5) for reporting analytics runners to isolate client queries.", "priority": "HIGH"},
             {"text": "Add a statement timeout limit of 30 seconds for all queries running on the primary database.", "priority": "MED"}
         ]
     else:
         cat = "memory_leak"
-        root_cause_sum = "The recommendation-service has encountered a slow memory leak culminating in a container OOMKill by the host kernel. Yesterday's deployment enabled an unbounded in-memory cache to store user embedding models without implementing any eviction policy, TTL, or maximum size constraint. Heap usage rose linearly until the 4.0GB container memory limit was reached, causing Kubernetes eviction."
-        comp = "recommendation-service → EmbeddingCache (unbounded, no LRU/TTL)"
+        
+        # Pull dynamic values from incident
+        heap_gb = incident.get('metrics', {}).get('heap_gb', {}).get('value', 4.0)
+        gc_pause = incident.get('metrics', {}).get('gc_pause_ms', {}).get('value', 4200)
+        restarts = incident.get('metrics', {}).get('pod_restarts_24h', {}).get('value', 3)
+        
+        deploy = incident.get("deployments", [{}])[0] if incident.get("deployments") else {}
+        version = deploy.get("version", "v1.8.2")
+        pr_num = deploy.get("pr", "#2340")
+        change_desc = deploy.get("change", "Enabled unbounded cache")
+        
+        root_cause_sum = (
+            f"The recommendation-service has encountered a slow memory leak culminating in a container OOMKill by the host kernel. "
+            f"The deployment of cache version {version} ({pr_num}) enabled an unbounded in-memory cache to store recommendation embedding weights. "
+            f"Because it lacks any eviction policy, TTL, or size limits, heap usage grew linearly to {heap_gb}GB, spiking GC pauses to {gc_pause}ms "
+            f"until the container was OOMKilled ({restarts} times in the last 24h)."
+        )
+        comp = f"{service} → EmbeddingCache (unbounded, no LRU/TTL)"
         evidence = [
-            f"Linear heap growth observed terminating at {incident.get('metrics', {}).get('heap_gb', {}).get('value', 4.0)}GB threshold",
-            f"Garbage collection pause latency escalated to {incident.get('metrics', {}).get('gc_pause_ms', {}).get('value', 4200)}ms prior to restart",
-            "Kubernetes event log confirms exit code 137 (OOMKilled) on recommendation pods"
+            f"Linear heap growth observed terminating at {heap_gb}GB memory threshold",
+            f"Garbage collection pause latency escalated to {gc_pause}ms prior to container eviction",
+            f"Kubernetes event log confirms exit code 137 (OOMKilled) on {service} pods"
         ]
         blast_services = ["recommendation-service", "api-gateway"]
-        users_affected = "~2,300 active SRE sessions"
-        revenue_loss = f"${random.randint(10, 25)} / min"
-        fix_cmd = "kubectl rollout undo deployment/recommendation-service"
+        users_affected = f"~{int(restarts * 750):,} impacted recommendation profiles"
+        revenue_loss = f"${round(restarts * 5.40, 2)} / min"
+        fix_cmd = f"kubectl rollout undo deployment/{service}"
         fix_eta = "~5 min"
         prevention = [
             {"text": "Refactor EmbeddingCache using a Guava/LRU cache with a maximum capacity of 10k items and a 1-hour expiration TTL.", "priority": "HIGH"},
@@ -650,7 +724,7 @@ async def list_incidents():
                 print(f"[NEXUS] PD fetch failed: {e} — falling back to demo")
 
     return [
-        {"id": v["id"], "title": v["title"], "service": v["service"], "severity": v["severity"]}
+        {"id": v["id"], "title": v["title"], "service": v["service"], "severity": v["severity"], "resolved": v.get("resolved", False)}
         for v in DEMO_INCIDENTS.values()
     ]
 
@@ -767,6 +841,7 @@ async def ws_analysis(websocket: WebSocket, incident_id: str):
                 await websocket.send_json({"type": "token", "content": token})
 
             analysis = extract_json(full)
+            incident["analysis"] = analysis
             elapsed = round((time.time() - start) * 1000)
             await websocket.send_json({
                 "type": "complete", "analysis": analysis,
@@ -776,6 +851,7 @@ async def ws_analysis(websocket: WebSocket, incident_id: str):
         except Exception as ai_err:
             print(f"[NEXUS] AI error ({ai_err}) — utilizing dynamic stochastic SRE analysis fallback for {incident_id}")
             backup_analysis = generate_stochastic_analysis_backup(incident)
+            incident["analysis"] = backup_analysis
             text = json.dumps(backup_analysis, indent=2)
             # Stream backup analysis char-by-char to preserve the interactive typewriter feel
             for char in text:
@@ -817,14 +893,46 @@ async def chat_copilot(req: ChatRequest):
         for l in incident.get("logs", [])
     )
 
+    # Stateful SRE RAG context compilation
+    rag_context = f"""[INCIDENT TELEMETRY]
+ID: {req.incident_id}
+Title: {incident.get('title')}
+Service: {incident.get('service')}
+Severity: {incident.get('severity')}
+
+[RAW LOGS]
+{logs_str}
+
+[RAW METRICS]
+{json.dumps(incident.get('metrics', {}), indent=2)}
+
+[RECENT DEPLOYMENTS]
+{json.dumps(incident.get('deployments', []), indent=2)}
+"""
+
+    if "analysis" in incident:
+        rag_context += f"\n[AI ROOT CAUSE ANALYSIS REPORT]\n{json.dumps(incident['analysis'], indent=2)}"
+
+    if "remediation" in incident:
+        rag_context += f"\n[AUTOMATED REMEDIATION CONSOLE LOGS]\nCommand Executed: {incident['remediation']['command']}\nTerminal Output:\n" + "\n".join(
+            f"[{log['type'].upper()}] {log['text']}" for log in incident['remediation']['logs']
+        )
+
     messages = [
         {
             "role": "system",
-            "content": "You are NEXUS SRE Copilot, assisting the on-call SRE in a high-pressure 2am war room. Be concise, highly technical, and precise. Provide exact commands, code snippets, or analytical points. Do not speak in fluff. Keep answers under 120 words if possible."
+            "content": (
+                "You are NEXUS SRE Copilot, assisting the on-call SRE in a high-pressure 2am war room. "
+                "You have full RAG access to the incident logs, metrics, AI analysis reports, and remediation console events. "
+                "Be extremely precise, concise, and highly technical. Answer the question using the EXACT numbers, metrics, "
+                "error percentages, latency spikes, database queues, PIDs, container hashes, and commit IDs from the context. "
+                "NEVER hallucinate or fall back to generic values (like 8.5% payment error rate if the telemetry says 10.6%). "
+                "Do not speak in fluff. Keep answers under 120 words if possible."
+            )
         },
         {
             "role": "user",
-            "content": f"Here is the telemetry context for incident {req.incident_id}:\nLogs:\n{logs_str}\nMetrics:\n{json.dumps(incident.get('metrics', {}))}\nDeployments:\n{json.dumps(incident.get('deployments', {}))}"
+            "content": f"Here is the active RAG incident context:\n{rag_context}"
         }
     ]
 
@@ -852,32 +960,46 @@ async def chat_copilot(req: ChatRequest):
     except Exception as e:
         print(f"[NEXUS] Chat LLM error: {e} — compiling dynamic SRE response")
         
-        # SRE Intelligent Backup Chat Responder
+        # SRE Intelligent Backup Chat Responder with 100% Dynamic Calculated Metrics
         def generate_stochastic_chat_backup(incident: dict, question: str) -> str:
             service = incident.get("service", "unknown-service")
             q = question.lower()
             
             if service == "payment-service":
-                if any(k in q for k in ["pr", "pull request", "commit", "merge"]):
-                    return "The regression was introduced in the latest PR which refactored billing address parameter handling. A developer removed the critical null-safety checks in the charge pipeline to optimize execution speed. The commit ID is visible in the recent deployment log as the source of rollout."
-                elif any(k in q for k in ["fix", "remediate", "rollback", "undo", "solve"]):
-                    return "To restore service immediately, run: 'kubectl rollout undo deployment/payment-service'. This will revert the running pods to the previous stable revision. Once completed, the gateway circuit breaker will close and order checkouts will resume."
+                error_rate = incident.get('metrics', {}).get('payment_error_rate', {}).get('value', 8.5)
+                orders = incident.get('metrics', {}).get('orders_per_minute', {}).get('value', 10)
+                version = incident.get("deployments", [{}])[0].get("version", "v2.3.15") if incident.get("deployments") else "v2.3.15"
+                commit = incident.get("deployments", [{}])[0].get("pr", "#9608") if incident.get("deployments") else "#9608"
+                author = incident.get("deployments", [{}])[0].get("author", "sarah.dev") if incident.get("deployments") else "sarah.dev"
+                
+                if any(k in q for k in ["pr", "pull request", "commit", "merge", "version"]):
+                    return f"The regression was introduced in deployment {version} (commit {commit}) authored by {author}. The PR refactored optional billing fields in the payment pipeline."
+                elif any(k in q for k in ["fix", "remediate", "rollback", "undo", "solve", "command"]):
+                    return f"To restore payment processing immediately, run: 'kubectl rollout undo deployment/payment-service'. This will revert the pods to the previous stable release, lowering the {error_rate}% error rate back to baseline."
                 else:
-                    return "The payment-service HTTP 500 error spike is caused by a NullPointerException at line 247 in com.nexus.billing.Processor. The charge pipeline attempts to read optional billing fields which are null in checkout payloads, causing complete crashes. This is a deployment regression."
+                    return f"The payment-service HTTP 500 error spike is currently at {error_rate}% error rate with P99 latency at {incident.get('metrics', {}).get('api_latency_p99_ms', {}).get('value', 4800)}ms. The failure is caused by a NullPointerException at Processor.java:247 when charge payload billing address fields are null."
             elif service == "user-service":
+                waiting = incident.get('metrics', {}).get('db_waiting_connections', {}).get('value', 47)
+                cpu = incident.get('metrics', {}).get('db_cpu_percent', {}).get('value', 95)
+                latency = incident.get('metrics', {}).get('api_latency_p99_ms', {}).get('value', 12300)
+                
                 if any(k in q for k in ["analytics", "scan", "query", "runner"]):
-                    return "The database connection pool exhaustion was triggered by the daily analytics runner job, which is scanning the orders table (over 45M rows) without database indexing or record count limits. It is saturating all 20 pooled database handles, starving main API gateway traffic."
+                    return f"The database lock contention was triggered by the analytics-runner full orders table scan. It locked core database handles, spiking database CPU to {cpu}%."
                 elif any(k in q for k in ["kill", "terminate", "remediate", "command", "pgrep"]):
-                    return "Run 'kill -9 $(pgrep analytics)' on the analytics host, or execute the SQL command 'SELECT pg_terminate_backend(pid) FROM pg_stat_activity' on the primary postgres instance targeting the orders scan query to flush locked handles instantly."
+                    return "Run 'kill -9 $(pgrep analytics)' or execute 'SELECT pg_terminate_backend(pid) FROM pg_stat_activity' on the primary postgres cluster to instantly flush connection locks."
                 else:
-                    return f"The API P99 latency spike to {incident.get('metrics', {}).get('api_latency_p99_ms', {}).get('value', 12300)}ms is caused by database thread starvation. Product-service and user-service connections are fully blocked waiting to acquire database handles."
+                    return f"The user-service is suffering database pool starvation. There are {waiting} waiting connections and API latency is spiked to {latency}ms due to index-less analytics scans."
             else:
+                heap = incident.get('metrics', {}).get('heap_gb', {}).get('value', 4.0)
+                gc = incident.get('metrics', {}).get('gc_pause_ms', {}).get('value', 4200)
+                restarts = incident.get('metrics', {}).get('pod_restarts_24h', {}).get('value', 3)
+                
                 if any(k in q for k in ["leak", "cache", "memory", "heap", "oom"]):
-                    return "The memory leak is located within the EmbeddingCache class, which was enabled in yesterday's deployment. It caches user vector embeddings in-memory but lacks an eviction threshold or TTL limit. As a result, memory grew linearly at ~900MB/hr until exceeding the 4.0GB container threshold, triggering OOMKill (exit code 137)."
+                    return f"The recommendation-service has a memory leak in its embedding weights cache. JVM heap utilization reached {heap}GB, resulting in excessive GC pauses of {gc}ms and Kubernetes OOMKill."
                 elif any(k in q for k in ["fix", "remediate", "rollback"]):
-                    return "You should rollback the recommendation deployment to the previous stable revision. This will instantly release the leaked heap memory and avoid further container recycles by the Kubernetes kubelet node manager."
+                    return "You should rollback the recommendation-service deployment using 'kubectl rollout undo deployment/recommendation-service' to return heap consumption to stable limits."
                 else:
-                    return "The OOMKill occurred because recommendation-service JVM Heap memory hit the 4.0GB threshold limit. The garbage collection pauses spiked, causing API timeouts, and eventually the container was terminated by the host kernel OOM controller."
+                    return f"recommendation-service has crashed {restarts} times in the last 24h due to OOMKilled (Exit Code 137). The heap utilization hit its limit of {heap}GB due to unbounded caching."
 
         reply = generate_stochastic_chat_backup(incident, req.question)
         return {"reply": reply}
@@ -943,6 +1065,12 @@ Return ONLY the raw JSON array. Do not wrap in markdown code blocks or add text 
                 array_str = match.group(0) if match else reply
                 logs = json.loads(array_str)
                 if isinstance(logs, list) and len(logs) > 0:
+                    incident["remediation"] = {
+                        "command": cmd,
+                        "logs": logs,
+                        "resolved": True
+                    }
+                    incident["resolved"] = True
                     return {"logs": logs}
         except Exception as e:
             print(f"[NEXUS] Remediation AI failed: {e} — using dynamic python fallback")
@@ -1013,6 +1141,12 @@ Return ONLY the raw JSON array. Do not wrap in markdown code blocks or add text 
         {"text": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "type": "success"}
     ])
 
+    incident["remediation"] = {
+        "command": cmd,
+        "logs": logs,
+        "resolved": True
+    }
+    incident["resolved"] = True
     return {"logs": logs}
 
 
