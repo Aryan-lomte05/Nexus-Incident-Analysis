@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+/frontend/node_modules/
+venv/
+/backend/venv/
+.venv/
+env/
+/backend/env/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+/backend/__pycache__/
+/backend/integrations/__pycache__/
+
+# Build Directories
+dist/
+/frontend/dist/
+build/
+
+# Secrets and Local Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+/backend/.env
+
+# IDE and System Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Archive/Zip files in root
+files.zip
