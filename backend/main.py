@@ -135,7 +135,6 @@ def generate_stochastic_incidents():
     pr_num = f"#{random.randint(4000, 9999)}"
     commit_hash = f"a{random.randint(100000, 999999)}"
     
-    # Assign single dynamic value to resolve inconsistency
     inc1_error_rate = round(random.uniform(7.8, 12.5), 1)
     inc1_latency = random.randint(3800, 5200)
     inc1_orders = random.randint(8, 15)
@@ -162,7 +161,70 @@ def generate_stochastic_incidents():
             "orders_per_minute": {"value": inc1_orders, "normal": 340}
         },
         "deployments": [
-            {"time": t_minus_15, "service": "payment-service", "version": version_new, "author": random.choice(["sarah.dev", "alex.ops", "kyle.m"]), "pr": pr_num, "change": f"Refactored optional billing fields handling in charge pipeline"}
+            {"time": t_minus_15, "service": "payment-service", "version": version_new, "author": "sarah.dev", "pr": pr_num, "change": f"Refactored optional billing fields handling in charge pipeline"}
+        ],
+        "similar_incidents": [
+            {
+                "id": "INC-084",
+                "date": "April 14, 2026",
+                "title": "Payment NPE on unvalidated billing address optional field",
+                "mttr": "14 mins",
+                "fix": "kubectl rollout undo deployment/payment-service",
+                "owner": "alex.ops",
+                "status": "succeeded"
+            }
+        ],
+        "opentelemetry_traces": [
+            {"span_id": "sp-gw-01", "service": "api-gateway", "op": "POST /v1/charge", "duration_ms": inc1_latency, "status": "error", "parent_id": None},
+            {"span_id": "sp-auth-02", "service": "auth-service", "op": "GET /users/validate", "duration_ms": 42, "status": "success", "parent_id": "sp-gw-01"},
+            {"span_id": "sp-pay-03", "service": "payment-service", "op": "PaymentProcessor.charge", "duration_ms": inc1_latency - 60, "status": "error", "parent_id": "sp-gw-01", "details": "NullPointerException at Processor.java:247"},
+            {"span_id": "sp-db-04", "service": "postgres", "op": "SELECT billing_address", "duration_ms": 2, "status": "success", "parent_id": "sp-pay-03"}
+        ],
+        "security_analysis": {
+            "classification": "Operational Incident",
+            "cyber_checks": [
+                {"name": "Administrative SSH Spikes", "status": "passed", "details": "Nominal admin sessions"},
+                {"name": "Payload Injection Checks", "status": "passed", "details": "All header structures verified by WAF"},
+                {"name": "DDoS Anomaly Detectors", "status": "passed", "details": "Request rates are within normal operational limits"},
+                {"name": "Unauthorized Miner Daemons", "status": "passed", "details": "Process tree maps 100% to signed container images"}
+            ]
+        },
+        "remediation_risk_options": [
+            {"action": f"kubectl rollout undo deployment/payment-service", "risk": "LOW", "confidence": 94, "recovery_time": "3 min", "blast_radius": "payment-service pods only (zero downtime)"},
+            {"action": "kubectl rollout restart deployment/payment-service", "risk": "MEDIUM", "confidence": 61, "recovery_time": "4 min", "blast_radius": "payment-service cold boot delays (30s gateway 503s)"},
+            {"action": "kubectl scale deployment/payment-service --replicas=64", "risk": "LOW", "confidence": 32, "recovery_time": "2 min", "blast_radius": "Adds system nodes but cannot bypass code exceptions"},
+            {"action": "redis-cli -h cache-prod FLUSHALL", "risk": "HIGH", "confidence": 18, "recovery_time": "5 min", "blast_radius": "Invalidates core tokens, triggering full client re-logins"}
+        ],
+        "confidence_calibration": {
+            "contributions": [
+                {"source": "Deployment Event Correlation", "value": 32},
+                {"source": "NullPointerException Stack Correlation", "value": 27},
+                {"source": "Billing Address Timing Match", "value": 18},
+                {"source": "Historical Incident SRE Similarity", "value": 17}
+            ],
+            "degradations": [
+                {"text": "Incomplete transaction socket duration pools (-4%)"}
+            ]
+        },
+        "investigation_graph": {
+            "nodes": [
+                {"id": "n1", "label": f"Deployment {version_new}", "type": "deploy", "status": "info"},
+                {"id": "n2", "label": "Processor.charge() NPE", "type": "method", "status": "warn"},
+                {"id": "n3", "label": "NullPointerException", "type": "exception", "status": "error"},
+                {"id": "n4", "label": "Circuit Breaker OPEN", "type": "gateway", "status": "error"},
+                {"id": "n5", "label": f"{inc1_error_rate}% HTTP 500 Spike", "type": "metric", "status": "error"}
+            ],
+            "edges": [
+                {"from": "n1", "to": "n2"},
+                {"from": "n2", "to": "n3"},
+                {"from": "n3", "to": "n4"},
+                {"from": "n4", "to": "n5"}
+            ]
+        },
+        "escalation_logs": [
+            {"t": "-12m", "msg": "PagerDuty Triggered: API Gateway payment-service 5xx spike", "level": "warn"},
+            {"t": "-10m", "msg": "Auto-escalation P2 -> P0: Estimated revenue loss breached threshold ($93/min)", "level": "critical"},
+            {"t": "-9m", "msg": "On-call paged: Primary SRE Engineer sarah.dev acknowledged alert via mobile console", "level": "success"}
         ]
     }
     
@@ -175,7 +237,6 @@ def generate_stochastic_incidents():
     t2_minus_5 = (now - timedelta(minutes=5)).strftime("%H:%M:%S")
     t2_minus_2 = (now - timedelta(minutes=2)).strftime("%H:%M:%S")
     
-    # Assign single dynamic value to resolve inconsistency
     inc2_latency_sec = round(random.uniform(10.5, 14.8), 1)
     inc2_waiting_conns = random.randint(30, 60)
     inc2_cpu_percent = random.randint(88, 97)
@@ -200,7 +261,67 @@ def generate_stochastic_incidents():
             "api_latency_p99_ms": {"value": int(inc2_latency_sec * 1000), "normal": 180},
             "db_cpu_percent": {"value": inc2_cpu_percent, "normal": 25}
         },
-        "deployments": []
+        "deployments": [],
+        "similar_incidents": [
+            {
+                "id": "INC-192",
+                "date": "May 03, 2026",
+                "title": "Postgres Shared Lock Starvation during batch export",
+                "mttr": "8 mins",
+                "fix": "SELECT pg_terminate_backend(pid) FROM pg_stat_activity",
+                "owner": "kyle.m",
+                "status": "succeeded"
+            }
+        ],
+        "opentelemetry_traces": [
+            {"span_id": "sp-gw-21", "service": "api-gateway", "op": "GET /v1/users/profile", "duration_ms": int(inc2_latency_sec * 1000), "status": "error", "parent_id": None},
+            {"span_id": "sp-usr-22", "service": "user-service", "op": "UserService.getProfile", "duration_ms": int(inc2_latency_sec * 1000) - 20, "status": "error", "parent_id": "sp-gw-21", "details": "Database connection pool lock starvation"},
+            {"span_id": "sp-db-23", "service": "postgres", "op": "SELECT orders FULL SCAN", "duration_ms": 12000, "status": "success", "parent_id": "sp-usr-22"}
+        ],
+        "security_analysis": {
+            "classification": "Operational Incident",
+            "cyber_checks": [
+                {"name": "Administrative SSH Spikes", "status": "passed", "details": "No abnormal SSH accesses"},
+                {"name": "Payload Injection Checks", "status": "passed", "details": "All structures passing validation bounds"},
+                {"name": "DDoS Anomaly Detectors", "status": "passed", "details": "Normal incoming query load verified"},
+                {"name": "Unauthorized Miner Daemons", "status": "passed", "details": "CPU allocation stems purely from native database transactions"}
+            ]
+        },
+        "remediation_risk_options": [
+            {"action": "kill -9 $(pgrep analytics) && psql -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE '%orders%';\"", "risk": "MEDIUM", "confidence": 98, "recovery_time": "2 min", "blast_radius": "Terminates the analytics runner scan, releases database lock immediately"},
+            {"action": "kubectl rollout restart deployment/user-service", "risk": "HIGH", "confidence": 42, "recovery_time": "4 min", "blast_radius": "Does not clear database lock state, cold starts compound user starvation queues"},
+            {"action": "kubectl scale deployment/user-service --replicas=40", "risk": "LOW", "confidence": 55, "recovery_time": "3 min", "blast_radius": "Spawns containers, but they will immediate lock up queuing behind postgres handles"}
+        ],
+        "confidence_calibration": {
+            "contributions": [
+                {"source": "Database Lock Thread Spikes", "value": 45},
+                {"source": "Analytics Scans In Logs", "value": 31},
+                {"source": "Baseline Latency Corroboration", "value": 16}
+            ],
+            "degradations": [
+                {"text": "Missing replica transaction replication queues (-4%)"}
+            ]
+        },
+        "investigation_graph": {
+            "nodes": [
+                {"id": "n1", "label": "Analytics Scan orders", "type": "deploy", "status": "info"},
+                {"id": "n2", "label": "Active Pool exhausted (20/20)", "type": "method", "status": "warn"},
+                {"id": "n3", "label": f"{inc2_waiting_conns} Blocked Conn Queue", "type": "exception", "status": "error"},
+                {"id": "n4", "label": f"DB CPU Locked at {inc2_cpu_percent}%", "type": "gateway", "status": "error"},
+                {"id": "n5", "label": f"{inc2_latency_sec}s P99 Spike", "type": "metric", "status": "error"}
+            ],
+            "edges": [
+                {"from": "n1", "to": "n2"},
+                {"from": "n2", "to": "n3"},
+                {"from": "n3", "to": "n4"},
+                {"from": "n4", "to": "n5"}
+            ]
+        },
+        "escalation_logs": [
+            {"t": "-18m", "msg": "PagerDuty Triggered: API Gateway user-service P99 Latency critical alert", "level": "warn"},
+            {"t": "-14m", "msg": "Auto-escalation P2 -> P1: High priority. Affected active user sessions exceeding critical limits", "level": "critical"},
+            {"t": "-12m", "msg": "Primary SRE Engineer kyle.m notified. On-call response registered", "level": "success"}
+        ]
     }
     
     # ─── Incident 3: JVM Memory Leak
@@ -214,7 +335,6 @@ def generate_stochastic_incidents():
     
     cache_version = f"v1.{random.randint(7, 9)}.{random.randint(0, 9)}"
     
-    # Assign single dynamic values to resolve inconsistency
     inc3_heap_trend1 = round(random.uniform(1.1, 1.4), 1)
     inc3_heap_trend2 = round(random.uniform(2.2, 2.5), 1)
     inc3_heap_trend3 = round(random.uniform(3.4, 3.7), 1)
@@ -242,6 +362,66 @@ def generate_stochastic_incidents():
         },
         "deployments": [
             {"time": t3_minus_40, "service": "recommendation-service", "version": cache_version, "author": "john.ops", "pr": f"#{random.randint(1000, 3999)}", "change": "Enabled unbounded in-memory embedding cache for recommendation weights"}
+        ],
+        "similar_incidents": [
+            {
+                "id": "INC-044",
+                "date": "April 02, 2026",
+                "title": "OOMKill caused by unbounded caching systems in embedding caches",
+                "mttr": "34 mins",
+                "fix": "kubectl rollout undo deployment/recommendation-service",
+                "owner": "john.ops",
+                "status": "succeeded"
+            }
+        ],
+        "opentelemetry_traces": [
+            {"span_id": "sp-gw-31", "service": "api-gateway", "op": "GET /v1/recommendations", "duration_ms": 5200, "status": "error", "parent_id": None},
+            {"span_id": "sp-rec-32", "service": "recommendation-service", "op": "RecService.getFeed", "duration_ms": 5200, "status": "error", "parent_id": "sp-gw-31", "details": "Container OOMKilled (Exit Code 137)"},
+            {"span_id": "sp-jvm-33", "service": "jvm-gc", "op": "Full Garbage Collection Cycle", "duration_ms": inc3_gc_pause, "status": "error", "parent_id": "sp-rec-32"}
+        ],
+        "security_analysis": {
+            "classification": "Operational Incident",
+            "cyber_checks": [
+                {"name": "Administrative SSH Spikes", "status": "passed", "details": "No active SSH warnings"},
+                {"name": "Payload Injection Checks", "status": "passed", "details": "Payload structures verified"},
+                {"name": "DDoS Anomaly Detectors", "status": "passed", "details": "Traffic flows are fully nominal"},
+                {"name": "Unauthorized Miner Daemons", "status": "passed", "details": "Container memory checks pass"}
+            ]
+        },
+        "remediation_risk_options": [
+            {"action": "kubectl rollout undo deployment/recommendation-service", "risk": "LOW", "confidence": 92, "recovery_time": "5 min", "blast_radius": "recommendation-service pods only (zero downtime)"},
+            {"action": "kubectl rollout restart deployment/recommendation-service", "risk": "MEDIUM", "confidence": 58, "recovery_time": "4 min", "blast_radius": "Temporary container recycling (30s recommendation drops)"},
+            {"action": "kubectl scale deployment/recommendation-service --replicas=8", "risk": "LOW", "confidence": 49, "recovery_time": "3 min", "blast_radius": "Slows memory starvation rate, but leak continues until OOM"}
+        ],
+        "confidence_calibration": {
+            "contributions": [
+                {"source": "Linear Heap Growth Metrics", "value": 41},
+                {"source": "GC Overlimit Execution Time", "value": 34},
+                {"source": "Kubernetes OOMKilled Signals", "value": 17}
+            ],
+            "degradations": [
+                {"text": "Missing real-time JVM thread heap dumps (-3%)"}
+            ]
+        },
+        "investigation_graph": {
+            "nodes": [
+                {"id": "n1", "label": "Unbounded Cache enabled", "type": "deploy", "status": "info"},
+                {"id": "n2", "label": "Heap Memory leak", "type": "method", "status": "warn"},
+                {"id": "n3", "label": f"GC pause spiked ({inc3_gc_pause}ms)", "type": "exception", "status": "error"},
+                {"id": "n4", "label": f"Container OOMKilled", "type": "gateway", "status": "error"},
+                {"id": "n5", "label": f"{inc3_restarts} Pod Restarts / 24h", "type": "metric", "status": "error"}
+            ],
+            "edges": [
+                {"from": "n1", "to": "n2"},
+                {"from": "n2", "to": "n3"},
+                {"from": "n3", "to": "n4"},
+                {"from": "n4", "to": "n5"}
+            ]
+        },
+        "escalation_logs": [
+            {"t": "-42m", "msg": "Container Alert: recommendation-service JVM Heap Usage breached warning threshold (85%)", "level": "warn"},
+            {"t": "-10m", "msg": "Kubernetes Alert: recommendation-service container evicted exit 137", "level": "critical"},
+            {"t": "-8m", "msg": "Primary On-Call SRE alert triggered and acknowledged globally", "level": "success"}
         ]
     }
     
@@ -405,7 +585,14 @@ def generate_stochastic_analysis_backup(incident: dict) -> dict:
         },
         "timeline": timeline,
         "fix": {"cmd": fix_cmd, "eta": fix_eta},
-        "prevention": prevention
+        "prevention": prevention,
+        "similar_incidents": incident.get("similar_incidents", []),
+        "opentelemetry_traces": incident.get("opentelemetry_traces", []),
+        "security_analysis": incident.get("security_analysis", {}),
+        "remediation_risk_options": incident.get("remediation_risk_options", []),
+        "confidence_calibration": incident.get("confidence_calibration", {}),
+        "investigation_graph": incident.get("investigation_graph", {}),
+        "escalation_logs": incident.get("escalation_logs", [])
     }
 
 
@@ -792,6 +979,17 @@ async def list_incidents():
         {"id": v["id"], "title": v["title"], "service": v["service"], "severity": v["severity"], "resolved": v.get("resolved", False)}
         for v in DEMO_INCIDENTS.values()
     ]
+
+
+@app.post("/api/incidents/reset")
+async def reset_incidents():
+    """Reset the in-memory state of all demo incidents back to unresolved."""
+    for inc in DEMO_INCIDENTS.values():
+        inc["resolved"] = False
+        if "remediation" in inc:
+            del inc["remediation"]
+    return {"ok": True}
+
 
 
 @app.get("/api/incidents/{incident_id}")

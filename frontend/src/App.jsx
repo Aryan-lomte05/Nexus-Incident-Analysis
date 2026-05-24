@@ -10,7 +10,8 @@ import {
   Zap, Terminal, Clock, Radio, Copy, Check, Settings,
   Loader2, Shield, GitCommit, Server, AlertCircle,
   Activity, ChevronRight, CheckCircle2, Flame, Cpu,
-  X, Wifi, WifiOff, RefreshCw, Database, Bell
+  X, Wifi, WifiOff, RefreshCw, Database, Bell,
+  Network, BarChart, Eye, BookOpen, ShieldAlert
 } from "lucide-react"
 
 // ─── DESIGN TOKENS ────────────────────────────────────────────
@@ -200,8 +201,19 @@ const generateClientStochasticAnalysis = (inc) => {
     return { time: l.t, event: l.msg, src };
   });
 
+  const baseAnalysis = {
+    similar_incidents: inc.similar_incidents || [],
+    opentelemetry_traces: inc.opentelemetry_traces || [],
+    security_analysis: inc.security_analysis || {},
+    remediation_risk_options: inc.remediation_risk_options || [],
+    confidence_calibration: inc.confidence_calibration || {},
+    investigation_graph: inc.investigation_graph || {},
+    escalation_logs: inc.escalation_logs || []
+  };
+
   if (isPayment) {
     return {
+      ...baseAnalysis,
       severity: "P0",
       confidence: 0.92,
       title: "Dynamic Root Cause Analysis — Payment Gateway Regression",
@@ -228,6 +240,7 @@ const generateClientStochasticAnalysis = (inc) => {
     };
   } else if (isUser) {
     return {
+      ...baseAnalysis,
       severity: "P1",
       confidence: 0.88,
       title: "Dynamic Root Cause Analysis — Database Connection Starvation",
@@ -254,6 +267,7 @@ const generateClientStochasticAnalysis = (inc) => {
     };
   } else {
     return {
+      ...baseAnalysis,
       severity: "P2",
       confidence: 0.85,
       title: "Dynamic Root Cause Analysis — JVM Heap Memory Leak",
@@ -406,7 +420,7 @@ function SrcIcon({ src }) {
 }
 
 // ─── TELEMETRY SVG CHART ──────────────────────────────────────
-function TelemetryChart({ incident, resolved }) {
+function TelemetryChart({ incident, resolved, replayIndex = 10 }) {
   const service = incident?.service;
   const incidentId = incident?.id;
   let points = []
@@ -416,14 +430,23 @@ function TelemetryChart({ incident, resolved }) {
   let color = C.cyan
   let normalVal = ""
 
+  // Calculate dynamic multiplier based on replayIndex (0-10)
+  // t <= 2: baseline (nominal operating state)
+  // 2 < t <= 8: ramp up from baseline to critical peak
+  // t > 8: peak outage severity
+  // t === 10 and resolved: drops instantly back to baseline (remediated)
+  const isResolved = resolved && replayIndex === 10;
+  const ramp = replayIndex <= 2 ? 0 : replayIndex >= 8 ? 1 : (replayIndex - 2) / 6;
+
   if (service === "payment-service") {
     label = "payment-service — HTTP 5xx Error Rate"
-    const currentVal = incident?.metrics?.payment_error_rate?.value ?? 8.5;
-    val = resolved ? "0.1%" : `${currentVal}%`
+    const currentVal = incident?.metrics?.payment_error_rate?.value ?? 10.6;
+    const computedVal = isResolved ? 0.1 : 0.1 + (currentVal - 0.1) * ramp;
+    val = `${computedVal.toFixed(1)}%`
     normalVal = "0.1% baseline"
     threshold = 80
-    color = resolved ? C.green : C.red
-    points = resolved 
+    color = (isResolved || replayIndex <= 2) ? C.green : (replayIndex >= 8 ? C.red : C.amber)
+    points = isResolved 
       ? [
           { x: 0, y: 115 }, { x: 150, y: 115 }, { x: 180, y: 115 },
           { x: 200, y: 30 }, { x: 250, y: 35 }, { x: 300, y: 28 },
@@ -431,43 +454,45 @@ function TelemetryChart({ incident, resolved }) {
         ]
       : [
           { x: 0, y: 115 }, { x: 150, y: 115 }, { x: 180, y: 115 },
-          { x: 200, y: 30 }, { x: 250, y: 35 }, { x: 300, y: 28 },
-          { x: 350, y: 32 }, { x: 420, y: 25 }, { x: 500, y: 30 }
+          { x: 200, y: 115 - (85 * ramp) }, { x: 250, y: 115 - (80 * ramp) }, { x: 300, y: 115 - (87 * ramp) },
+          { x: 350, y: 115 - (83 * ramp) }, { x: 420, y: 115 - (90 * ramp) }, { x: 500, y: 115 - (85 * ramp) }
         ]
   } else if (service === "user-service") {
     label = "user-service — API Latency (p99)"
     const latencyVal = incident?.metrics?.api_latency_p99_ms?.value ?? 12300;
-    val = resolved ? "180ms" : `${(latencyVal / 1000).toFixed(1)}s`
+    const computedVal = isResolved ? 180 : 180 + (latencyVal - 180) * ramp;
+    val = computedVal >= 1000 ? `${(computedVal / 1000).toFixed(1)}s` : `${Math.round(computedVal)}ms`
     normalVal = "180ms baseline"
     threshold = 90
-    color = resolved ? C.green : C.amber
-    points = resolved
+    color = (isResolved || replayIndex <= 2) ? C.green : (replayIndex >= 8 ? C.red : C.amber)
+    points = isResolved
       ? [
           { x: 0, y: 115 }, { x: 150, y: 115 }, { x: 180, y: 110 },
           { x: 210, y: 20 }, { x: 260, y: 24 }, { x: 310, y: 18 },
           { x: 360, y: 22 }, { x: 390, y: 115 }, { x: 500, y: 115 }
         ]
       : [
-          { x: 0, y: 115 }, { x: 150, y: 115 }, { x: 180, y: 110 },
-          { x: 210, y: 20 }, { x: 260, y: 24 }, { x: 310, y: 18 },
-          { x: 360, y: 22 }, { x: 430, y: 15 }, { x: 500, y: 17 }
+          { x: 0, y: 115 }, { x: 150, y: 115 }, { x: 180, y: 115 },
+          { x: 210, y: 115 - (95 * ramp) }, { x: 260, y: 115 - (91 * ramp) }, { x: 310, y: 115 - (97 * ramp) },
+          { x: 360, y: 115 - (93 * ramp) }, { x: 430, y: 115 - (100 * ramp) }, { x: 500, y: 115 - (98 * ramp) }
         ]
   } else {
     label = "recommendation-service — JVM Heap Memory"
     const heapVal = incident?.metrics?.heap_gb?.value ?? 4.0;
-    val = resolved ? "1.2 GB" : `${heapVal.toFixed(1)} GB`
+    const computedVal = isResolved ? 1.2 : 1.2 + (heapVal - 1.2) * ramp;
+    val = `${computedVal.toFixed(1)} GB`
     normalVal = "1.2 GB baseline"
     threshold = 40
-    color = resolved ? C.green : C.amber
-    points = resolved
+    color = (isResolved || replayIndex <= 2) ? C.green : (replayIndex >= 8 ? C.red : C.amber)
+    points = isResolved
       ? [
           { x: 0, y: 115 }, { x: 100, y: 90 }, { x: 200, y: 65 },
           { x: 300, y: 40 }, { x: 360, y: 20 }, { x: 380, y: 115 },
           { x: 500, y: 115 }
         ]
       : [
-          { x: 0, y: 115 }, { x: 100, y: 90 }, { x: 200, y: 65 },
-          { x: 300, y: 40 }, { x: 400, y: 20 }, { x: 500, y: 10 }
+          { x: 0, y: 115 }, { x: 100, y: 115 - (25 * ramp) }, { x: 200, y: 115 - (50 * ramp) },
+          { x: 300, y: 115 - (75 * ramp) }, { x: 400, y: 115 - (95 * ramp) }, { x: 500, y: 115 - (105 * ramp) }
         ]
   }
 
@@ -521,14 +546,14 @@ function TelemetryChart({ incident, resolved }) {
             </>
           )}
 
-          {resolved && (
+          {isResolved && (
             <>
               <line x1="380" y1="0" x2="380" y2="120" stroke={C.green} strokeDasharray="2 2" strokeWidth="1" />
               <text x="384" y="14" fill={C.green} style={{ fontSize: 8, fontWeight: 800, fontFamily: MONO }}>REMEDIATED</text>
             </>
           )}
 
-          <path d={areaPath} fill={`url(#gradient-${incidentId}-${resolved ? 'ok' : 'err'})`} style={{ transition: "all 0.5s ease" }} />
+          <path d={areaPath} fill={`url(#gradient-${incidentId}-${isResolved ? 'ok' : 'err'})`} style={{ transition: "all 0.5s ease" }} />
           <path d={dPath} fill="none" stroke={color} strokeWidth="2.2" style={{ transition: "all 0.5s ease" }} />
 
           <defs>
@@ -552,6 +577,547 @@ function TelemetryChart({ incident, resolved }) {
       </div>
     </div>
   )
+}
+
+// ─── DYNAMIC SERVICE TOPOLOGY MAP ────────────────────────────
+function ServiceTopologyMap({ incident, resolved, replayIndex = 10 }) {
+  const service = incident?.service;
+  const isResolved = resolved && replayIndex === 10;
+  const activeNode = isResolved ? "" : service;
+  
+  // Calculate warning vs critical bounds based on replay Index
+  const isCritical = replayIndex >= 8;
+  const isWarning = replayIndex > 2 && replayIndex < 8;
+  const isNormal = replayIndex <= 2 || isResolved;
+
+  // Custom colors and border weights based on node state
+  const getNodeStyles = (nodeName) => {
+    if (isNormal) return { border: "rgba(0,212,255,0.18)", color: C.cyan, glow: "rgba(0,212,255,0.04)", label: C.text };
+    if (nodeName === activeNode) {
+      if (isCritical) return { border: C.red, color: C.red, glow: "rgba(255,59,59,0.22)", label: C.red, pulse: true };
+      if (isWarning) return { border: C.amber, color: C.amber, glow: "rgba(255,184,0,0.15)", label: C.amber, pulse: true };
+    }
+    // Dependency indicators
+    if (activeNode === "payment-service" && (nodeName === "api-gateway" || nodeName === "order-service")) {
+      return { border: "rgba(255,184,0,0.4)", color: C.amber, glow: "rgba(255,184,0,0.1)", label: C.text };
+    }
+    if (activeNode === "user-service" && (nodeName === "api-gateway" || nodeName === "product-service" || nodeName === "postgres")) {
+      return { border: "rgba(255,184,0,0.4)", color: C.amber, glow: "rgba(255,184,0,0.1)", label: C.text };
+    }
+    if (activeNode === "recommendation-service" && (nodeName === "api-gateway" || nodeName === "cache-redis")) {
+      return { border: "rgba(255,184,0,0.4)", color: C.amber, glow: "rgba(255,184,0,0.1)", label: C.text };
+    }
+    return { border: "rgba(0,212,255,0.06)", color: C.dim, glow: "transparent", label: C.muted };
+  };
+
+  const getEdgeStroke = (fromNode, toNode) => {
+    if (isNormal) return "rgba(0,212,255,0.08)";
+    const pathKey = `${fromNode}->${toNode}`;
+    const paymentPath = ["api-gateway->order-service", "order-service->payment-service", "payment-service->postgres"];
+    const userPath = ["api-gateway->product-service", "product-service->user-service", "user-service->postgres"];
+    const recPath = ["api-gateway->recommendation-service", "recommendation-service->cache-redis"];
+
+    if (activeNode === "payment-service" && paymentPath.includes(pathKey)) {
+      return isCritical ? C.red : C.amber;
+    }
+    if (activeNode === "user-service" && userPath.includes(pathKey)) {
+      return isCritical ? C.red : C.amber;
+    }
+    if (activeNode === "recommendation-service" && recPath.includes(pathKey)) {
+      return isCritical ? C.red : C.amber;
+    }
+    return "rgba(0,212,255,0.04)";
+  };
+
+  const nodes = [
+    { id: "api-gateway", label: "api-gateway", x: 250, y: 30, short: "GW" },
+    { id: "order-service", label: "order-svc", x: 100, y: 110, short: "ORD" },
+    { id: "user-service", label: "user-svc", x: 250, y: 110, short: "USR" },
+    { id: "recommendation-service", label: "rec-svc", x: 400, y: 110, short: "REC" },
+    { id: "payment-service", label: "payment-svc", x: 100, y: 190, short: "PAY" },
+    { id: "postgres", label: "postgres db", x: 250, y: 190, short: "DB" },
+    { id: "cache-redis", label: "redis cache", x: 400, y: 190, short: "MEM" }
+  ];
+
+  return (
+    <div style={{ background: "#050912", border: `1px solid ${C.border}`, padding: "16px", borderRadius: 6, position: "relative", marginTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          Dynamic Architecture Topology Map
+        </span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 9, fontFamily: MONO, color: C.dim }}>
+          <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: C.green }} /> NOMINAL
+          <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: C.red }} /> FAILING
+        </div>
+      </div>
+
+      <div style={{ position: "relative", height: 215 }}>
+        <svg width="100%" height="100%" viewBox="0 0 500 220" style={{ overflow: "visible" }}>
+          <defs>
+            <filter id="topoGlow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
+
+          {/* Paths (Edges) */}
+          <line x1="250" y1="30" x2="100" y2="110" stroke={getEdgeStroke("api-gateway", "order-service")} strokeWidth={activeNode === "payment-service" ? 2.5 : 1} />
+          <line x1="250" y1="30" x2="250" y2="110" stroke={getEdgeStroke("api-gateway", "user-service")} strokeWidth={activeNode === "user-service" ? 2.5 : 1} />
+          <line x1="250" y1="30" x2="400" y2="110" stroke={getEdgeStroke("api-gateway", "recommendation-service")} strokeWidth={activeNode === "recommendation-service" ? 2.5 : 1} />
+          
+          <line x1="100" y1="110" x2="100" y2="190" stroke={getEdgeStroke("order-service", "payment-service")} strokeWidth={activeNode === "payment-service" ? 2.5 : 1} />
+          <line x1="100" y1="190" x2="250" y2="190" stroke={getEdgeStroke("payment-service", "postgres")} strokeWidth={activeNode === "payment-service" ? 1.5 : 1} />
+          
+          <line x1="250" y1="110" x2="250" y2="190" stroke={getEdgeStroke("user-service", "postgres")} strokeWidth={activeNode === "user-service" ? 2.5 : 1} />
+          <line x1="400" y1="110" x2="400" y2="190" stroke={getEdgeStroke("recommendation-service", "cache-redis")} strokeWidth={activeNode === "recommendation-service" ? 2.5 : 1} />
+
+          {/* Animated Particles flowing dynamically along edges */}
+          {!isNormal && activeNode === "payment-service" && (
+            <>
+              <circle r="3" fill={isCritical ? C.red : C.amber}>
+                <animateMotion dur="2.2s" repeatCount="indefinite" path="M 250 30 L 100 110" />
+              </circle>
+              <circle r="3" fill={isCritical ? C.red : C.amber}>
+                <animateMotion dur="1.7s" repeatCount="indefinite" path="M 100 110 L 100 190" />
+              </circle>
+              <circle r="2.5" fill={C.cyan}>
+                <animateMotion dur="1.3s" repeatCount="indefinite" path="M 100 190 L 250 190" />
+              </circle>
+            </>
+          )}
+
+          {!isNormal && activeNode === "user-service" && (
+            <>
+              <circle r="3" fill={isCritical ? C.red : C.amber}>
+                <animateMotion dur="2.4s" repeatCount="indefinite" path="M 250 30 L 250 110" />
+              </circle>
+              <circle r="3" fill={isCritical ? C.red : C.amber}>
+                <animateMotion dur="1.8s" repeatCount="indefinite" path="M 250 110 L 250 190" />
+              </circle>
+            </>
+          )}
+
+          {!isNormal && activeNode === "recommendation-service" && (
+            <>
+              <circle r="3" fill={isCritical ? C.red : C.amber}>
+                <animateMotion dur="2.1s" repeatCount="indefinite" path="M 250 30 L 400 110" />
+              </circle>
+              <circle r="3" fill={isCritical ? C.red : C.amber}>
+                <animateMotion dur="1.7s" repeatCount="indefinite" path="M 400 110 L 400 190" />
+              </circle>
+            </>
+          )}
+
+          {/* Render Vector Nodes */}
+          {nodes.map(n => {
+            const st = getNodeStyles(n.id);
+            const isFailing = n.id === activeNode;
+            
+            return (
+              <g key={n.id} transform={`translate(${n.x}, ${n.y})`}>
+                {isFailing && (
+                  <circle r="22" fill="none" stroke={st.color} strokeWidth="1" opacity="0.6" style={{ filter: "url(#topoGlow)" }}>
+                    <animate attributeName="r" values="14;26;14" dur="1.8s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.8;0.1;0.8" dur="1.8s" repeatCount="indefinite" />
+                  </circle>
+                )}
+
+                <rect x="-34" y="-13" width="68" height="26" rx="4"
+                  fill="#0D1322" stroke={st.border} strokeWidth={isFailing ? 2 : 1.2}
+                  style={{
+                    filter: isFailing ? "url(#topoGlow)" : "none",
+                    transition: "all 0.3s ease"
+                  }}
+                />
+                
+                <text textAnchor="middle" y="4" fill={st.label} style={{ fontSize: 9.5, fontWeight: 800, pointerEvents: "none" }}>
+                  {n.short}
+                </text>
+                
+                <text textAnchor="middle" y="24" fill={st.color} style={{ fontSize: 7.5, fontFamily: MONO, fontWeight: 700, pointerEvents: "none" }}>
+                  {n.id === activeNode ? (isCritical ? "FAILING" : "WARNING") : (isResolved ? "NOMINAL" : n.label)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// ─── MULTI-AGENT DIAGNOSTICS ROOM ───────────────────────────
+function MultiAgentDiagnosticsRoom({ incident, stream }) {
+  const service = incident?.service;
+  const len = stream?.length || 0;
+  
+  // Ratios for diagnostics sequential flow completion
+  const ratio = Math.min(len / 1000, 1);
+
+  const getAgentStatus = (start, end) => {
+    if (ratio < start) return { text: "IDLE", color: C.dim, progress: 0 };
+    if (ratio >= end) return { text: "DONE ✓", color: C.green, progress: 100 };
+    const p = Math.round(((ratio - start) / (end - start)) * 100);
+    return { text: `RUNNING (${p}%)`, color: C.cyan, progress: p };
+  };
+
+  const agents = [
+    {
+      id: "log-agent", name: "Log Agent", icon: <Terminal size={11} />, color: C.purple,
+      start: 0.0, end: 0.25,
+      getLog: () => {
+        if (service === "payment-service") return "Scanning stdout logs... isolated 342 NullPointerExceptions at com.nexus.billing.Processor:247";
+        if (service === "user-service") return "Auditing service stdout logs... warning: user-svc connections waiting breached pool threshold (18/20 in use).";
+        return "Auditing scheduler events... detected OOMKilled exit code 137 container eviction on pod rec-svc.";
+      }
+    },
+    {
+      id: "metric-agent", name: "Metric Agent", icon: <Activity size={11} />, color: C.cyan,
+      start: 0.15, end: 0.45,
+      getLog: () => {
+        if (service === "payment-service") return "Polling Datadog series... active error rate spike at 11.6% (critical limit 5.0%)";
+        if (service === "user-service") return "Querying Datadog database queues... P99 latency degraded to 12.3s (nominal 180ms).";
+        return "Querying JVM metrics... heap utilization breached limit, GC overhead paused applications for 4200ms.";
+      }
+    },
+    {
+      id: "deploy-agent", name: "Deploy Agent", icon: <GitCommit size={11} />, color: C.purple,
+      start: 0.32, end: 0.6,
+      getLog: () => {
+        if (service === "payment-service") return "Auditing Git triggers... matched commit a582012 by sarah.dev with NullPointer regression onset.";
+        if (service === "user-service") return "Auditing Git registries... zero deployments inside 24h. Anomaly is fully transactional.";
+        return "Auditing merge pipeline... john.ops enabled unbounded embedding weights cache v1.8.4 40m ago.";
+      }
+    },
+    {
+      id: "k8s-agent", name: "K8s Agent", icon: <Server size={11} />, color: C.amber,
+      start: 0.48, end: 0.72,
+      getLog: () => {
+        if (service === "payment-service") return "Fetching core namespace status... 32 pods active. Scale limits and config nominal.";
+        if (service === "user-service") return "Fetching replica descriptors... user-svc pods running normal. Scale limits healthy.";
+        return "Querying k8s events... pod evicted at 09:45:33 due to OOM (Exit Code 137). Loop crashback active.";
+      }
+    },
+    {
+      id: "db-agent", name: "DB Agent", icon: <Database size={11} />, color: C.green,
+      start: 0.62, end: 0.82,
+      getLog: () => {
+        if (service === "payment-service") return "Describing postgres pool descriptors... order and user schemas nominal. Connection pools clear.";
+        if (service === "user-service") return "STARVATION: Index-less table scan on orders locked all 20 connections. Blocked query compiled.";
+        return "Describing Redis active caches... cache hit rates degraded due to rec-svc OOM stalls.";
+      }
+    },
+    {
+      id: "security-agent", name: "Security Agent", icon: <Shield size={11} />, color: C.red,
+      start: 0.75, end: 0.92,
+      getLog: () => {
+        return "Describing WAF intrusion logs... SSH admin rates normal. SQL billing payloads clean. DDoS limit verified.";
+      }
+    },
+    {
+      id: "synthesizer-agent", name: "Synthesizer Agent", icon: <Zap size={11} />, color: C.cyan,
+      start: 0.88, end: 1.0,
+      getLog: () => {
+        return "Blending 6 SRE telemetry vectors. Calibrating final RCA explanation and remediation safety index...";
+      }
+    }
+  ];
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 20, height: "100%" }}>
+      {/* Agent Cards column */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", paddingRight: 4 }}>
+        <div style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 2 }}>
+          Diagnostic War Room Sub-Agents
+        </div>
+        
+        {agents.map(ag => {
+          const st = getAgentStatus(ag.start, ag.end);
+          const isAnalyzing = st.text.includes("RUNNING");
+          const isDone = st.text.includes("DONE");
+          const isIdle = st.text === "IDLE";
+          
+          return (
+            <div key={ag.id} style={{
+              background: isAnalyzing ? "rgba(0,212,255,0.04)" : "#070B15",
+              border: `1px solid ${isAnalyzing ? "rgba(0,212,255,0.22)" : (isDone ? "rgba(0,232,122,0.12)" : C.border)}`,
+              borderRadius: 6, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4,
+              transition: "all 0.25s ease"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: ag.color, display: "flex" }}>{ag.icon}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{ag.name}</span>
+                </div>
+                <span style={{ fontSize: 9, fontFamily: MONO, fontWeight: 800, color: st.color }}>
+                  {st.text}
+                </span>
+              </div>
+              
+              {!isIdle && (
+                <>
+                  <div style={{ fontSize: 9.5, fontFamily: MONO, color: isAnalyzing ? C.cyan : "#8898B8", marginTop: 2, lineHeight: 1.4 }}>
+                    {ag.getLog()}
+                  </div>
+                  <div style={{ width: "100%", height: 2, background: "rgba(255,255,255,0.03)", borderRadius: 1, marginTop: 4, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${st.progress}%`, background: isDone ? C.green : C.cyan, transition: "width 0.2s ease" }} />
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Synthesis stream box */}
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", minWidth: 0 }}>
+        <div style={{ fontSize: 9.5, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 8 }}>
+          Synthesizer Live Reasoning Output
+        </div>
+        <div className="clip-panel" style={{
+          flex: 1, background: "#020408", border: `1px solid rgba(0,212,255,0.1)`,
+          padding: 14, overflowY: "auto", fontFamily: MONO, fontSize: 11, lineHeight: 1.75,
+          color: "rgba(0,212,255,0.75)", whiteSpace: "pre-wrap"
+        }}>
+          {stream}
+          <span className="blink" style={{ color: C.cyan }}>▋</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SECURITY-AWARE RCA SCAN ─────────────────────────────────
+function SecurityRcaScan({ incident }) {
+  const analysis = incident?.security_analysis || {
+    classification: "Operational Anomaly",
+    cyber_checks: [
+      { name: "Administrative SSH Spikes", status: "passed", details: "Nominal admin sessions registered" },
+      { name: "Payload Injection Checks", status: "passed", details: "Header checks clean. No SQL injection anomalies" },
+      { name: "DDoS Anomaly Detectors", status: "passed", details: "Traffic limits verified within normal baseline bounds" },
+      { name: "Unauthorized Miner Daemons", status: "passed", details: "Container signatures match signed deployment hashes" }
+    ]
+  };
+
+  return (
+    <TacPanel title="Security-Aware RCA Scan" icon={<ShieldAlert size={12} />} accent={C.red}>
+      <div style={{ background: "#050912", borderRadius: 6, padding: 12, border: `1px solid ${C.border}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottom: `1px solid ${C.border}`, paddingBottom: 8 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text }}>Classification</span>
+          <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 7px", borderRadius: 3, fontFamily: MONO, background: "rgba(255,59,59,0.06)", border: `1px solid rgba(255,59,59,0.22)`, color: C.red }}>
+            {(analysis.classification || "Operational Anomaly").toUpperCase()}
+          </span>
+        </div>
+        
+        {(analysis.cyber_checks || []).map((check, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", fontSize: 11, fontFamily: MONO, padding: "8px 0", borderBottom: i < (analysis.cyber_checks?.length || 0) - 1 ? `1px solid ${C.border}` : "none" }}>
+            <div>
+              <div style={{ color: C.text, fontWeight: 700 }}>{check.name}</div>
+              <div style={{ color: C.dim, fontSize: 9.5, marginTop: 2 }}>{check.details}</div>
+            </div>
+            <span style={{
+              fontSize: 8.5, fontWeight: 800, padding: "2px 6px", borderRadius: 3, marginLeft: 12, flexShrink: 0,
+              background: check.status === "passed" ? "rgba(0,232,122,0.06)" : "rgba(255,59,59,0.06)",
+              color: check.status === "passed" ? C.green : C.red,
+              border: `1px solid ${check.status === "passed" ? "rgba(0,232,122,0.22)" : "rgba(255,59,59,0.22)"}`
+            }}>{(check.status || "PASSED").toUpperCase()}</span>
+          </div>
+        ))}
+      </div>
+    </TacPanel>
+  );
+}
+
+// ─── POSTMORTEM REPORT GENERATOR ─────────────────────────────
+function PostmortemGenerator({ incident, analysis }) {
+  const [copied, setCopied] = useState("");
+  const service = incident?.service;
+
+  const mttr = incident?.similar_incidents?.[0]?.mttr || "14 mins";
+  
+  const postmortemMarkdown = `# SRE EXECUTIVE POSTMORTEM REPORT — ${incident?.id}
+Date: ${new Date().toISOString().slice(0, 10)} UTC
+Severity: ${incident?.severity} | MTTR: ${mttr}
+Downtime Cost: ${analysis?.blast_radius?.revenue || "$0"} / min
+
+## 1. Executive Summary
+An outage occurred in the ${service} microservice, cascading upstream to gateway entrypoints and triggering critical business error rates. Total recovery period registered at ${mttr}.
+
+## 2. Root Cause Analysis (RCA)
+${analysis?.root_cause?.summary || "Undergoing RAG verification..."}
+Component Starved: ${analysis?.root_cause?.component || "Unknown"}
+Anomaly Trigger: ${analysis?.root_cause?.category || "Unknown"}
+
+## 3. Telemetry Correlation Evidence
+${(analysis?.root_cause?.evidence || []).map((e, idx) => `* Signal ${idx + 1}: ${e}`).join("\n")}
+
+## 4. Remediation & Preventive Strategy
+* Staged Automation Action: \`${analysis?.fix?.cmd || "None"}\`
+* Prevention 1: ${analysis?.prevention?.[0]?.text || "None"}
+* Prevention 2: ${analysis?.prevention?.[1]?.text || "None"}
+
+---
+Report compiled automatically by NEXUS AI-SRE Brain.`;
+
+  const copyToClipboard = (platform) => {
+    navigator.clipboard.writeText(postmortemMarkdown);
+    setCopied(platform);
+    setTimeout(() => setCopied(""), 2000);
+  };
+
+  return (
+    <TacPanel title="Executive SRE Postmortem Exporter" icon={<Eye size={12} />} accent={C.green}>
+      <div style={{ background: "#050912", borderRadius: 6, padding: 14, border: `1px solid ${C.border}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase" }}>Markdown Postmortem Report</span>
+          <span style={{ fontSize: 9, fontFamily: MONO, color: C.green }}>READY FOR EXPORT</span>
+        </div>
+        
+        <pre style={{
+          maxHeight: 180, overflowY: "auto", background: "rgba(0,0,0,0.3)", padding: 12, borderRadius: 4,
+          fontFamily: MONO, fontSize: 10.5, color: "#8898B8", border: `1px solid ${C.border}`,
+          whiteSpace: "pre-wrap", margin: "0 0 14px", lineHeight: 1.55
+        }}>
+          {postmortemMarkdown}
+        </pre>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          {[
+            { id: "Slack", color: "#4A154B", label: "Slack" },
+            { id: "Confluence", color: "#0052CC", label: "Confluence" },
+            { id: "Jira", color: "#0052CC", label: "Jira" }
+          ].map(p => (
+            <button key={p.id} onClick={() => copyToClipboard(p.id)} style={{
+              background: copied === p.id ? "rgba(0,232,122,0.12)" : "rgba(255,255,255,0.02)",
+              border: `1px solid ${copied === p.id ? "rgba(0,232,122,0.35)" : C.border}`,
+              borderRadius: 4, padding: "7px 0", color: copied === p.id ? C.green : C.text,
+              fontSize: 10.5, fontWeight: 700, cursor: "pointer", fontFamily: MONO,
+              transition: "all 0.15s"
+            }}>
+              {copied === p.id ? "COPIED ✓" : `Export ${p.label}`}
+            </button>
+          ))}
+        </div>
+      </div>
+    </TacPanel>
+  );
+}
+
+// ─── INCIDENT REPLAY CONTROLLER ──────────────────────────────
+function IncidentReplayController({ replayIndex, setReplayIndex, isReplayPlaying, setIsReplayPlaying, incident }) {
+  const service = incident?.service;
+  
+  const NARRATIONS = {
+    "payment-service": {
+      0: "T-15m: CI/CD deployment initiated. payment-service scaling to 32 pods running release version v2.3.18.",
+      1: "T-14m: New pod orchestration completed. Active traffic maps bound to updated container tags.",
+      2: "T-12m: NPE regression activated in com.nexus.billing.Processor:247 on nullable billing profile charge calls.",
+      3: "T-12m: NPE exception rates climbing. com.nexus.billing.Processor:247 registers +342 crash alerts.",
+      4: "T-10m: Cart checkout transaction validations stalling on unresponsive upstream dependencies.",
+      5: "T-8m: upstream service status degraded. API Gateway circuit breaker automatically trips to OPEN state.",
+      6: "T-8m: Circuit breaker fully isolates payment-service. Client checkouts failing downstream with 503 errors.",
+      7: "T-5m: Failed cart authorizations cascade. Order-service traces breach critical response latency thresholds.",
+      8: "T-2m: Alertmanager fires critical P0 alert: PaymentFailedRate is 11.6%. sarah.dev mobile console paged.",
+      9: "T-1m: PagerDuty incidents created. Escalated to principal SRE cluster admin context globally.",
+      10: "NOW: Telemetry active. Copilot war room locked. Automated low-risk rollback mitigation is staged."
+    },
+    "user-service": {
+      0: "T-20m: Active connection pool warning. user-service reports database pools nearing thread thresholds.",
+      1: "T-18m: Database pool pressure active. 18 of 20 active connections capture thread pools.",
+      2: "T-15m: product-service transaction threads warning. Downstream user-service queries slow to 3200ms.",
+      3: "T-15m: Thread bottlenecks escalate. user-service profiles endpoints latency climbs to 4100ms.",
+      4: "T-10m: Analytics-runner triggers offline batch SQL report. Orders table full scan (45.2M rows) begins.",
+      5: "T-8m: Starvation: Orders full scan locks postgres cluster CPU, exhausting remaining 2 handle slots.",
+      6: "T-8m: Starvation active: 20/20 active connections locked. user-service waiting connections spike to 47.",
+      7: "T-5m: Transaction exceptions cascade. database thread pool timeouts after 5000ms acquire locks.",
+      8: "T-2m: Alertmanager fires critical P1 alert: user-service API latency is 12.3s. kyle.m paged.",
+      9: "T-1m: PagerDuty triggers active. user-service active user sessions starvation rate breaches limit.",
+      10: "NOW: Database pool starvation active. SRE console recommending analytics scanner process execution."
+    },
+    "recommendation-service": {
+      0: "T-40m: CI deployment of recommendation embedding cache complete. Heap consumption stable at 1.2GB.",
+      1: "T-35m: Embedded recommendation weights buffering active. Memory bounds trending linearly upward.",
+      2: "T-30m: Linear memory growth verified. Cache lacks eviction weights and TTL bounds (+900MB/hr).",
+      3: "T-25m: JVM heap utilization breaches 70% threshold. Garbage collection execution triggers.",
+      4: "T-20m: Heap utilization at 85% (3.4GB/4.0GB). JVM garbage collection pauses spike to 4200ms.",
+      5: "T-15m: GC Overhead limit exceeded exception. Heap thread stalling halts recommendation logic.",
+      6: "T-12m: OutOfMemoryError thrown in embedding memory sweeps. recommendation-service container hanging.",
+      7: "T-10m: Container evicted by host node kernel controller. OOMKilled exit code 137 registers in Kube logs.",
+      8: "T-8m: Gateway routes fail. recommendation-service cold startup delays throw 503 gateway errors.",
+      9: "T-5m: Crash loop active. recommendation-service registers 3 restarts within last 24 hours.",
+      10: "NOW: Outage fully active. Copilot war room recommending rollback undo of embedding release."
+    }
+  };
+
+  const getNarration = () => {
+    const defaultNarr = "Outage telemetry active. Drag the slider to scrub through SRE logs and monitor metrics propagation.";
+    if (!service || !NARRATIONS[service]) return defaultNarr;
+    return NARRATIONS[service][replayIndex] || defaultNarr;
+  };
+
+  return (
+    <div style={{
+      background: "linear-gradient(135deg, rgba(0,212,255,0.04), rgba(0,212,255,0.01))",
+      border: `1px solid ${C.borderActive}`,
+      padding: "14px 18px", borderRadius: 6, marginBottom: 16,
+      display: "flex", flexDirection: "column", gap: 10,
+      position: "relative", overflow: "hidden",
+      boxShadow: "0 0 20px rgba(0,212,255,0.05)"
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, borderBottom: `1px solid ${C.border}`, paddingBottom: 10 }}>
+        <div className="clip-sm" style={{
+          width: 32, height: 32, background: "rgba(0,212,255,0.08)", border: `1px solid rgba(0,212,255,0.25)`,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2
+        }}>
+          <Radio size={14} color={C.cyan} className={isReplayPlaying ? "pulse-dot" : ""} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 8.5, color: C.cyan, fontWeight: 800, fontFamily: MONO, textTransform: "uppercase", letterSpacing: "0.15em" }}>
+            AI SRE Operator Live Narration
+          </div>
+          <div style={{ fontSize: 11.5, color: C.text, lineHeight: 1.5, marginTop: 3, fontWeight: 500 }}>
+            {getNarration()}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <button onClick={() => setIsReplayPlaying(!isReplayPlaying)} style={{
+          background: isReplayPlaying ? "rgba(255,59,59,0.08)" : "rgba(0,212,255,0.08)",
+          border: `1px solid ${isReplayPlaying ? "rgba(255,59,59,0.3)" : "rgba(0,212,255,0.25)"}`,
+          borderRadius: 4, width: 34, height: 26, color: isReplayPlaying ? C.red : C.cyan,
+          fontSize: 9.5, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+          fontFamily: MONO, transition: "all 0.15s"
+        }}>
+          {isReplayPlaying ? "II" : "▶"}
+        </button>
+
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, fontFamily: MONO, color: C.muted }}>
+            <span>Incident Origin (T -15m)</span>
+            <span style={{ color: C.cyan, fontWeight: 700 }}>
+              {replayIndex === 10 ? "NOW (Peak Outage)" : `Outage Step ${replayIndex}/10`}
+            </span>
+            <span>Unresolved Peak (T-0m)</span>
+          </div>
+
+          <input
+            type="range"
+            min="0"
+            max="10"
+            value={replayIndex}
+            onChange={e => {
+              setReplayIndex(parseInt(e.target.value));
+              setIsReplayPlaying(false);
+            }}
+            style={{
+              width: "100%", accentColor: C.cyan, background: C.panelDeep, height: 4, borderRadius: 2, outline: "none", cursor: "pointer"
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── REMEDIATION TERMINAL CONSOLE ─────────────────────────────
@@ -598,6 +1164,9 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ incident_id: incidentId, command: cmd })
         })
+        if (!res.ok) {
+          throw new Error(`Remediation API returned status ${res.status}`);
+        }
         const data = await res.json()
         
         // Wait until initial logs animation finishes before drawing backend logs
@@ -605,13 +1174,16 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
         
         if (data && Array.isArray(data.logs)) {
           // Exclude any duplicate bootstrap logs the backend might return
-          const backendLogs = data.logs.filter(log => 
-            !log.text.includes("[INIT]") && 
-            !log.text.includes("[AUTH]") && 
-            !log.text.includes("$") &&
-            !log.text.includes("[SYS] Initializing operations") &&
-            !log.text.includes("[EXEC] Executing target")
-          )
+          const backendLogs = data.logs.filter(log => {
+            if (!log || !log.text) return false;
+            return (
+              !log.text.includes("[INIT]") && 
+              !log.text.includes("[AUTH]") && 
+              !log.text.includes("$") &&
+              !log.text.includes("[SYS] Initializing operations") &&
+              !log.text.includes("[EXEC] Executing target")
+            );
+          })
           
           // Render bootstrap sequence instantly in full if it didn't finish animating
           setLogs(initialLogs)
@@ -619,7 +1191,12 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
           let i = 0
           activeInterval = setInterval(() => {
             if (i < backendLogs.length) {
-              setLogs(prev => [...prev, backendLogs[i]])
+              setLogs(prev => {
+                const current = Array.isArray(prev) && prev.length >= initialLogs.length 
+                  ? prev 
+                  : initialLogs;
+                return [...current, backendLogs[i]];
+              });
               i++
             } else {
               clearInterval(activeInterval)
@@ -644,7 +1221,10 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
         let i = 0
         activeInterval = setInterval(() => {
           if (i < fallbackLogs.length) {
-            setLogs(prev => [...prev, fallbackLogs[i]])
+            setLogs(prev => {
+              const current = Array.isArray(prev) ? prev : [];
+              return [...current, fallbackLogs[i]];
+            });
             i++
           } else {
             clearInterval(activeInterval)
@@ -709,11 +1289,14 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
           fontFamily: MONO, fontSize: 11, lineHeight: 1.8,
           background: "#020408", color: "#A8B8D8",
         }}>
-          {logs.map((log, idx) => (
-            <div key={idx} style={{ color: typeStyles[log.type] || C.text, whiteSpace: "pre-wrap" }}>
-              {log.text}
-            </div>
-          ))}
+          {(logs || []).map((log, idx) => {
+            if (!log) return null;
+            return (
+              <div key={idx} style={{ color: typeStyles[log.type] || C.text, whiteSpace: "pre-wrap" }}>
+                {log.text || ""}
+              </div>
+            );
+          })}
           {!completed && (
             <span className="blink" style={{ color: C.cyan }}>▋</span>
           )}
@@ -738,6 +1321,25 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
 }
 
 // ─── SRE CHAT COPILOT WAR ROOM ────────────────────────────────
+function FormattedMessage({ content }) {
+  const parts = content.split(/(```[\s\S]*?```|\*\*.*?\*\*|`.*?`)/g);
+  return (
+    <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      {parts.map((part, i) => {
+        if (part.startsWith('```') && part.endsWith('```')) {
+          const code = part.slice(3, -3).replace(/^[\w-]+\n/, "");
+          return <div key={i} style={{ background: "rgba(0,0,0,0.3)", padding: 8, borderRadius: 4, margin: "6px 0", fontFamily: MONO, fontSize: 10.5, border: `1px solid ${C.border}`, overflowX: "auto" }}>{code}</div>;
+        } else if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={i} style={{ color: C.text, fontWeight: 800 }}>{part.slice(2, -2)}</strong>;
+        } else if (part.startsWith('`') && part.endsWith('`')) {
+          return <span key={i} style={{ background: "rgba(0,212,255,0.1)", color: C.cyan, padding: "2px 4px", borderRadius: 3, fontFamily: MONO, fontSize: 10.5 }}>{part.slice(1, -1)}</span>;
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </span>
+  );
+}
+
 function ChatCopilot({ incidentId }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState("")
@@ -833,9 +1435,8 @@ function ChatCopilot({ incidentId }) {
               <span style={{
                 fontSize: 11.5, color: isUser ? C.text : "#A8B8D8",
                 lineHeight: 1.5, fontFamily: isUser ? "inherit" : MONO,
-                whiteSpace: "pre-wrap",
               }}>
-                {m.content}
+                {isUser ? m.content : <FormattedMessage content={m.content} />}
               </span>
             </div>
           )
@@ -1165,22 +1766,237 @@ function SettingsDrawer({ open, onClose, config, onSave }) {
   )
 }
 
+// ─── NEW ENTERPRISE PANELS ────────────────────────────────────
+function SimilarIncidentsPanel({ incidents }) {
+  if (!incidents || incidents.length === 0) return null;
+  return (
+    <TacPanel title="Retrieval-Augmented Incident Memory" icon={<BookOpen size={12} />} accent={C.purple} delay={0.4}>
+      {incidents.map((inc, i) => (
+        <div key={i} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: 12, marginBottom: i < incidents.length - 1 ? 8 : 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{inc.title}</span>
+            <span style={{ fontSize: 9.5, color: C.muted, fontFamily: MONO }}>{inc.date}</span>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 10, color: C.dim, fontFamily: MONO, marginBottom: 8 }}>
+            <span>ID: {inc.id}</span>
+            <span>MTTR: {inc.mttr}</span>
+            <span>Owner: {inc.owner}</span>
+            <span style={{ color: (inc.status || "").toLowerCase() === "succeeded" ? C.green : C.amber }}>
+              Fix: {(inc.status || "UNKNOWN").toUpperCase()}
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: C.cyan, fontFamily: MONO, background: "rgba(0,0,0,0.2)", padding: "6px 8px", borderRadius: 4 }}>
+            $ {inc.fix}
+          </div>
+        </div>
+      ))}
+    </TacPanel>
+  );
+}
+
+function InvestigationGraphPanel({ graph }) {
+  if (!graph || !graph.nodes || graph.nodes.length === 0) return null;
+  return (
+    <TacPanel title="AI Investigation Graph" icon={<Network size={12} />} accent={C.cyan} delay={0.35}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, background: "#050912", borderRadius: 6, border: `1px solid ${C.border}` }}>
+        {graph.nodes.map((node, i) => (
+          <div key={node.id} style={{ display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{
+                  width: 24, height: 24, borderRadius: "50%",
+                  background: node.status === "error" ? "rgba(255,59,59,0.1)" : (node.status === "warn" ? "rgba(255,184,0,0.1)" : "rgba(0,212,255,0.1)"),
+                  border: `1px solid ${node.status === "error" ? C.red : (node.status === "warn" ? C.amber : C.cyan)}`,
+                  display: "flex", alignItems: "center", justifyContent: "center"
+                }}>
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: node.status === "error" ? C.red : (node.status === "warn" ? C.amber : C.cyan) }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{node.label}</div>
+                  <div style={{ fontSize: 9, color: C.muted, fontFamily: MONO, textTransform: "uppercase" }}>{node.type}</div>
+                </div>
+              </div>
+            </div>
+            {i < graph.nodes.length - 1 && (
+              <div style={{ width: 2, height: 16, background: C.border, marginLeft: 11, margin: "4px 0" }} />
+            )}
+          </div>
+        ))}
+      </div>
+    </TacPanel>
+  );
+}
+
+function ConfidenceCalibrationPanel({ calibration }) {
+  if (!calibration || (!calibration.contributions && !calibration.degradations)) return null;
+  return (
+    <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 6, padding: 12, marginTop: 16, border: `1px solid ${C.border}` }}>
+      <div style={{ fontSize: 9, color: C.muted, marginBottom: 8, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.15em" }}>
+        Confidence Breakdown
+      </div>
+      {(calibration.contributions || []).map((c, i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, fontFamily: MONO, marginBottom: 4 }}>
+          <span style={{ color: C.text }}>{c.source}</span>
+          <span style={{ color: C.green }}>+{c.value}%</span>
+        </div>
+      ))}
+      {(calibration.degradations || []).map((d, i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, fontFamily: MONO, marginBottom: 4, marginTop: 8 }}>
+          <span style={{ color: C.dim }}>{d.text}</span>
+          <span style={{ color: C.amber }}></span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RemediationRiskPanel({ options, onSelect }) {
+  if (!options || options.length === 0) return null;
+  return (
+    <TacPanel title="Remediation Safeties & Blast Radius" icon={<ShieldAlert size={12} />} accent={C.amber} delay={0.45}>
+      {options.map((opt, i) => (
+        <div key={i} style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}`, borderRadius: 6, padding: 12, marginBottom: i < options.length - 1 ? 8 : 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontFamily: MONO, color: C.cyan, wordBreak: "break-all" }}>$ {opt.action}</span>
+            <span style={{ 
+              fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 3, fontFamily: MONO, flexShrink: 0, marginLeft: 12,
+              background: opt.risk === "HIGH" ? "rgba(255,59,59,0.1)" : (opt.risk === "MEDIUM" ? "rgba(255,184,0,0.1)" : "rgba(0,232,122,0.1)"),
+              color: opt.risk === "HIGH" ? C.red : (opt.risk === "MEDIUM" ? C.amber : C.green),
+            }}>{opt.risk} RISK</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 10, color: C.muted, fontFamily: MONO, marginBottom: 8 }}>
+            <div>Confidence: <span style={{ color: C.text }}>{opt.confidence}%</span></div>
+            <div>Recovery: <span style={{ color: C.text }}>{opt.recovery_time}</span></div>
+          </div>
+          <div style={{ fontSize: 10.5, color: "#8898B8", lineHeight: 1.5 }}>
+            <span style={{ color: C.amber, fontWeight: 700 }}>Blast Radius:</span> {opt.blast_radius}
+          </div>
+          {i === 0 && (
+            <button onClick={() => onSelect(opt.action)} style={{
+              marginTop: 10, width: "100%", background: "rgba(0,232,122,0.1)", border: "1px solid rgba(0,232,122,0.3)",
+              color: C.green, fontSize: 10, fontWeight: 700, padding: "6px 0", borderRadius: 4, cursor: "pointer",
+              transition: "all 0.15s"
+            }}>EXECUTE RECOMMENDED ACTION</button>
+          )}
+        </div>
+      ))}
+    </TacPanel>
+  );
+}
+
+function OTelWaterfallPanel({ traces }) {
+  if (!traces || traces.length === 0) return null;
+  const maxDuration = traces && traces.length > 0 ? Math.max(...traces.map(t => t.duration_ms)) : 1;
+  return (
+    <TacPanel title="Distributed Tracing Waterfall" icon={<BarChart size={12} />} accent={C.purple} delay={0.5}>
+      <div style={{ background: "#050912", borderRadius: 6, padding: 12, border: `1px solid ${C.border}` }}>
+        {traces.map((trace, i) => {
+          const width = Math.max((trace.duration_ms / maxDuration) * 100, 2);
+          const marginLeft = trace.parent_id ? 16 : 0;
+          return (
+            <div key={trace.span_id} style={{ marginBottom: i < traces.length - 1 ? 10 : 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, fontFamily: MONO, marginBottom: 4, marginLeft }}>
+                <span style={{ color: C.text }}>{trace.service} <span style={{ color: C.dim }}>{trace.op}</span></span>
+                <span style={{ color: trace.status === "error" ? C.red : C.green }}>{trace.duration_ms}ms</span>
+              </div>
+              <div style={{ marginLeft, width: `calc(100% - ${marginLeft}px)`, height: 6, background: "rgba(255,255,255,0.05)", borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ width: `${width}%`, height: "100%", background: trace.status === "error" ? C.red : C.cyan, borderRadius: 3 }} />
+              </div>
+              {trace.details && (
+                <div style={{ marginLeft, fontSize: 9.5, color: C.red, fontFamily: MONO, marginTop: 4 }}>
+                  ↳ {trace.details}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </TacPanel>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────
+const FALLBACK_INCIDENT = {
+  id: "", title: "Loading incidents...", service: "sys-agent", severity: "P1", ago: "0m ago",
+  logs: [
+    { t: "00:00:00", svc: "kernel", lvl: "INFO", msg: "Establishing secure link to SRE telemetry network..." }
+  ],
+  metrics: {}, deployments: []
+}
+
 export default function App() {
   const [incidents, setIncidents] = useState([])
   const [selId, setSelId] = useState("")
-  const sel = incidents.find(i => i.id === selId) || {
-    id: "", title: "Loading incidents...", service: "sys-agent", severity: "P1", ago: "0m ago",
-    logs: [
-      { t: "00:00:00", svc: "kernel", lvl: "INFO", msg: "Establishing secure link to SRE telemetry network..." }
-    ],
-    metrics: {}, deployments: []
-  }
+  const sel = incidents.find(i => i.id === selId) || FALLBACK_INCIDENT
 
   const [phase, setPhase] = useState("idle")
+  const [viewMode, setViewMode] = useState("engineer")
   const [stream, setStream] = useState("")
   const [analysis, setAnalysis] = useState(null)
   const [visibleLogs, setVisibleLogs] = useState([])
+  
+  const resetAllIncidents = async () => {
+    try {
+      const res = await fetch("/api/incidents/reset", { method: "POST" })
+      const data = await res.json()
+      if (data && data.ok) {
+        const incidentsRes = await fetch("/api/incidents")
+        const incidentsData = await incidentsRes.json()
+        if (Array.isArray(incidentsData)) {
+          setIncidents(incidentsData.map(inc => ({
+            ...inc,
+            ago: inc.ago || "Just now",
+            resolved: false,
+            logs: inc.logs || [],
+            metrics: inc.metrics || {},
+            deployments: inc.deployments || []
+          })))
+          setPhase("idle")
+          setStream("")
+          setAnalysis(null)
+          setVisibleLogs([])
+          setReplayIndex(10)
+          setIsReplayPlaying(false)
+        }
+      }
+    } catch (err) {
+      console.error("Failed to reset incidents:", err)
+    }
+  }
+  
+  // ── Incident Replay State & Effects
+  const [replayIndex, setReplayIndex] = useState(10)
+  const [isReplayPlaying, setIsReplayPlaying] = useState(false)
+
+  useEffect(() => {
+    let interval = null
+    if (isReplayPlaying) {
+      interval = setInterval(() => {
+        setReplayIndex(prev => {
+          if (prev >= 10) {
+            setIsReplayPlaying(false)
+            return 10
+          }
+          return prev + 1
+        })
+      }, 2500)
+    }
+    return () => clearInterval(interval)
+  }, [isReplayPlaying])
+
+  useEffect(() => {
+    setReplayIndex(10)
+    setIsReplayPlaying(false)
+  }, [selId])
+
+  // Filter logs & timeline events dynamically based on current replayIndex scrubbing
+  const activeLogs = phase === "complete"
+    ? sel.logs.slice(0, Math.max(1, Math.ceil((replayIndex / 10) * sel.logs.length)))
+    : visibleLogs
+
+  const activeTimeline = analysis && analysis.timeline
+    ? analysis.timeline.slice(0, Math.max(1, Math.ceil((replayIndex / 10) * analysis.timeline.length)))
+    : []
   const [showSettings, setShowSettings] = useState(false)
   const [remediateOpen, setRemediateOpen] = useState(false)
   const [config, setConfig] = useState({
@@ -1198,6 +2014,9 @@ export default function App() {
   const fallbackTriggered = useRef(false)
   const intentionalClose = useRef(false)
   const tokensReceived = useRef(0)
+  const bufferRef = useRef("")
+  const incomingAnalysis = useRef(null)
+  const wsCompleted = useRef(false)
 
   // ── Fetch active incidents from backend on mount
   useEffect(() => {
@@ -1291,10 +2110,28 @@ export default function App() {
     fallbackTriggered.current = false
     intentionalClose.current = false
     tokensReceived.current = 0
+    bufferRef.current = ""
+    incomingAnalysis.current = null
+    wsCompleted.current = false
 
     if (activeWs.current) {
       try { activeWs.current.close() } catch (e) {}
     }
+
+    clearInterval(streamTimer.current)
+
+    // Pace the incoming stream from the token buffer to keep UI rendering smooth and readable
+    streamTimer.current = setInterval(() => {
+      if (bufferRef.current.length > 0) {
+        const chunk = bufferRef.current.slice(0, 6)
+        bufferRef.current = bufferRef.current.slice(6)
+        setStream(prev => prev + chunk)
+      } else if (wsCompleted.current && incomingAnalysis.current) {
+        clearInterval(streamTimer.current)
+        setAnalysis(incomingAnalysis.current)
+        setPhase("complete")
+      }
+    }, 18)
 
     const triggerFallback = () => {
       if (fallbackTriggered.current) return
@@ -1318,12 +2155,12 @@ export default function App() {
         const msg = JSON.parse(e.data)
         if (msg.type === "token") {
           tokensReceived.current += 1
-          setStream(p => p + msg.content)
+          bufferRef.current += msg.content // Buffer the token so we pace the typewriter animation
         }
         if (msg.type === "complete") {
           intentionalClose.current = true
-          setAnalysis(msg.analysis)
-          setPhase("complete")
+          incomingAnalysis.current = msg.analysis
+          wsCompleted.current = true // Flag complete, let typewriter catch up
           ws.close()
         }
         if (msg.type === "error") {
@@ -1357,14 +2194,22 @@ export default function App() {
     clearInterval(streamTimer.current)
     const clientAnalysis = generateClientStochasticAnalysis(sel)
     const text = buildStream({ ...sel, analysis: clientAnalysis })
-    let i = 0
+    
+    bufferRef.current = text
+    incomingAnalysis.current = clientAnalysis
+    wsCompleted.current = true
+    
     streamTimer.current = setInterval(() => {
-      if (i <= text.length) { setStream(text.slice(0, i)); i += 2 }
-      else {
+      if (bufferRef.current.length > 0) {
+        const chunk = bufferRef.current.slice(0, 6)
+        bufferRef.current = bufferRef.current.slice(6)
+        setStream(prev => prev + chunk)
+      } else {
         clearInterval(streamTimer.current)
-        setTimeout(() => { setAnalysis(clientAnalysis); setPhase("complete") }, 400)
+        setAnalysis(incomingAnalysis.current)
+        setPhase("complete")
       }
-    }, 12)
+    }, 18)
   }, [sel])
 
   const activeCritical = incidents.filter(i => i.severity === "P0" && !i.resolved).length
@@ -1462,6 +2307,16 @@ export default function App() {
             <span style={{ fontSize: 10.5, color: C.dim, fontFamily: MONO }}>llama3.1:8b</span>
           </div>
           <LiveClock />
+          <button onClick={resetAllIncidents} style={{
+            background: "none", border: `1px solid ${C.border}`, borderRadius: 5,
+            padding: "5px 7px", color: C.muted, cursor: "pointer",
+            display: "flex", transition: "all 0.15s",
+          }}
+            title="Reset Incidents Telemetry"
+            onMouseEnter={e => { e.currentTarget.style.borderColor = C.borderHi; e.currentTarget.style.color = C.amber }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.muted }}>
+            <RefreshCw size={13} />
+          </button>
           <button onClick={() => setShowSettings(true)} style={{
             background: "none", border: `1px solid ${C.border}`, borderRadius: 5,
             padding: "5px 7px", color: C.muted, cursor: "pointer",
@@ -1607,7 +2462,21 @@ export default function App() {
               </div>
 
               {/* Action state */}
-              <div style={{ flexShrink: 0 }}>
+              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 12 }}>
+                {phase === "complete" && (
+                  <div style={{ display: "flex", background: C.panelDeep, border: `1px solid ${C.border}`, borderRadius: 6, padding: 2 }}>
+                    {["executive", "engineer"].map(m => (
+                      <button key={m} onClick={() => setViewMode(m)} style={{
+                        padding: "5px 12px", borderRadius: 4, fontSize: 10.5, fontWeight: 700,
+                        border: "none", cursor: "pointer", transition: "all 0.15s",
+                        background: viewMode === m ? "rgba(0,212,255,0.15)" : "transparent",
+                        color: viewMode === m ? C.cyan : C.muted, textTransform: "uppercase"
+                      }}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {phase === "idle" && (
                   <motion.button
                     onClick={analyze}
@@ -1693,20 +2562,14 @@ export default function App() {
               <motion.div
                 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                 className="clip-panel"
-                ref={streamRef}
                 style={{
-                  background: C.panelDeep,
-                  border: `1px solid rgba(0,212,255,0.1)`,
-                  padding: 22, height: 360,
-                  overflowY: "auto",
-                  fontFamily: MONO, fontSize: 12, lineHeight: 1.9,
-                  color: "rgba(0,212,255,0.75)",
+                  background: C.panel,
+                  border: `1px solid ${C.border}`,
+                  padding: 22, height: 460,
+                  overflow: "hidden"
                 }}
               >
-                <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                  {stream}
-                  <span className="blink" style={{ color: C.cyan }}>▋</span>
-                </pre>
+                <MultiAgentDiagnosticsRoom incident={sel} stream={stream} />
               </motion.div>
             )}
 
@@ -1714,6 +2577,15 @@ export default function App() {
             <AnimatePresence>
               {phase === "complete" && analysis && (
                 <>
+                  {/* Outage Replay Controller */}
+                  <IncidentReplayController
+                    replayIndex={replayIndex}
+                    setReplayIndex={setReplayIndex}
+                    isReplayPlaying={isReplayPlaying}
+                    setIsReplayPlaying={setIsReplayPlaying}
+                    incident={sel}
+                  />
+
                   {/* Confidence Banner */}
                   <motion.div
                     initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -1757,41 +2629,56 @@ export default function App() {
                       </div>
                     </div>
                   </motion.div>
-
-                  {/* Root Cause */}
-                  <TacPanel title="Root Cause" icon={<AlertCircle size={12} />} accent={C.red} delay={0.1}>
-                    <span style={{
-                      display: "inline-block", fontSize: 9.5, fontWeight: 800, color: C.red,
-                      background: "rgba(255,59,59,0.08)", border: "1px solid rgba(255,59,59,0.22)",
-                      borderRadius: 3, padding: "2px 8px", marginBottom: 12,
-                      fontFamily: MONO, letterSpacing: "0.08em",
-                    }}>
-                      {analysis.root_cause.category}
-                    </span>
-                    <p style={{ fontSize: 13, color: "#A8B8D8", lineHeight: 1.75, margin: "0 0 14px" }}>
-                      {analysis.root_cause.summary}
-                    </p>
-                    <div style={{ fontFamily: MONO, fontSize: 11.5, color: C.cyan, marginBottom: 14 }}>
-                      ↳ {analysis.root_cause.component}
-                    </div>
-                    <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-                      <div style={{ fontSize: 9, color: C.muted, marginBottom: 8, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.15em" }}>
-                        Evidence
+                  {viewMode === "engineer" && (
+                    <ConfidenceCalibrationPanel calibration={analysis.confidence_calibration} />
+                  )}
+                  
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                    {/* Root Cause */}
+                    <TacPanel title="Root Cause" icon={<AlertCircle size={12} />} accent={C.red} delay={0.1}>
+                      <span style={{
+                        display: "inline-block", fontSize: 9.5, fontWeight: 800, color: C.red,
+                        background: "rgba(255,59,59,0.08)", border: "1px solid rgba(255,59,59,0.22)",
+                        borderRadius: 3, padding: "2px 8px", marginBottom: 12,
+                        fontFamily: MONO, letterSpacing: "0.08em",
+                      }}>
+                        {analysis.root_cause?.category}
+                      </span>
+                      <p style={{ fontSize: 13, color: "#A8B8D8", lineHeight: 1.75, margin: "0 0 14px" }}>
+                        {analysis.root_cause?.summary}
+                      </p>
+                      <div style={{ fontFamily: MONO, fontSize: 11.5, color: C.cyan, marginBottom: 14 }}>
+                        ↳ {analysis.root_cause?.component}
                       </div>
-                      {analysis.root_cause.evidence.map((e, i) => (
-                        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5, fontSize: 11.5, color: "#6070A0", fontFamily: MONO, lineHeight: 1.5 }}>
-                          <ChevronRight size={11} color={C.red} style={{ flexShrink: 0, marginTop: 1 }} />
-                          {e}
+                      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+                        <div style={{ fontSize: 9, color: C.muted, marginBottom: 8, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.15em" }}>
+                          Evidence
                         </div>
-                      ))}
-                    </div>
-                  </TacPanel>
+                        {(analysis.root_cause?.evidence || []).map((e, i) => (
+                          <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5, fontSize: 11.5, color: "#6070A0", fontFamily: MONO, lineHeight: 1.5 }}>
+                            <ChevronRight size={11} color={C.red} style={{ flexShrink: 0, marginTop: 1 }} />
+                            {e}
+                          </div>
+                        ))}
+                      </div>
+                    </TacPanel>
+
+                    {viewMode === "engineer" ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        <InvestigationGraphPanel graph={analysis.investigation_graph} />
+                        <OTelWaterfallPanel traces={analysis.opentelemetry_traces} />
+                        <SecurityRcaScan incident={sel} />
+                      </div>
+                    ) : (
+                      <PostmortemGenerator incident={sel} analysis={analysis} />
+                    )}
+                  </div>
 
                   {/* Blast Radius + Timeline */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 0 }}>
                     <TacPanel title="Blast Radius" icon={<Radio size={12} />} accent={C.amber} delay={0.18}>
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}>
-                        {analysis.blast_radius.services.map(svc => (
+                        {(analysis.blast_radius?.services || []).map(svc => (
                           <span key={svc} style={{
                             fontSize: 10, padding: "3px 8px",
                             background: "rgba(255,184,0,0.06)", border: "1px solid rgba(255,184,0,0.2)",
@@ -1801,8 +2688,8 @@ export default function App() {
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
                         {[
-                          { label: "Users Affected", val: sel.resolved ? "0 users" : analysis.blast_radius.users, col: sel.resolved ? C.green : C.text },
-                          { label: "Revenue Loss", val: sel.resolved ? "$0 / min" : analysis.blast_radius.revenue, col: sel.resolved ? C.green : C.red },
+                          { label: "Users Affected", val: sel.resolved ? "0 users" : (analysis.blast_radius?.users || "~0 users"), col: sel.resolved ? C.green : C.text },
+                          { label: "Revenue Loss", val: sel.resolved ? "$0 / min" : (analysis.blast_radius?.revenue || "$0 / min"), col: sel.resolved ? C.green : C.red },
                         ].map(({ label, val, col }) => (
                           <div key={label} style={{ background: "rgba(255,255,255,0.02)", borderRadius: 5, padding: "10px 11px" }}>
                             <div style={{ fontSize: 9, color: C.muted, marginBottom: 4, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>
@@ -1810,19 +2697,20 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-                      <TelemetryChart incident={sel} resolved={sel.resolved} />
+                      <TelemetryChart incident={sel} resolved={sel.resolved} replayIndex={replayIndex} />
+                      <ServiceTopologyMap incident={sel} resolved={sel.resolved} replayIndex={replayIndex} />
                     </TacPanel>
 
                     <TacPanel title="Timeline" icon={<Clock size={12} />} accent={C.purple} delay={0.22}>
-                      {analysis.timeline.map((item, i) => (
-                        <div key={i} style={{ display: "flex", gap: 10, marginBottom: i < analysis.timeline.length - 1 ? 10 : 0 }}>
+                      {activeTimeline.map((item, i) => (
+                        <div key={i} style={{ display: "flex", gap: 10, marginBottom: i < activeTimeline.length - 1 ? 10 : 0 }}>
                           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
                             <div style={{ marginTop: 1 }}><SrcIcon src={item.src} /></div>
-                            {i < analysis.timeline.length - 1 && (
+                            {i < activeTimeline.length - 1 && (
                               <div style={{ width: 1, flex: 1, background: C.dim, margin: "4px 0" }} />
                             )}
                           </div>
-                          <div style={{ paddingBottom: i < analysis.timeline.length - 1 ? 4 : 0 }}>
+                          <div style={{ paddingBottom: i < activeTimeline.length - 1 ? 4 : 0 }}>
                             <div style={{ fontSize: 9.5, color: C.dim, fontFamily: MONO, marginBottom: 1 }}>{item.time}</div>
                             <div style={{ fontSize: 11, color: "#8898B8", lineHeight: 1.45 }}>{item.event}</div>
                           </div>
@@ -1831,73 +2719,85 @@ export default function App() {
                     </TacPanel>
                   </div>
 
-                  {/* Immediate Fix */}
-                  <TacPanel title="Immediate Fix" icon={<Zap size={12} />} accent={C.green} delay={0.28}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", flexWrap: "wrap", gap: 12 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 12.5, color: C.muted }}>Estimated recovery:</span>
-                        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.green, fontFamily: MONO }}>{analysis.fix.eta}</span>
+                  {viewMode === "engineer" && analysis.remediation_risk_options?.length > 0 ? (
+                    <RemediationRiskPanel options={analysis.remediation_risk_options} onSelect={(cmd) => {
+                      if (analysis.fix) analysis.fix.cmd = cmd;
+                      setRemediateOpen(true);
+                    }} />
+                  ) : (
+                    <TacPanel title="Immediate Fix" icon={<Zap size={12} />} accent={C.green} delay={0.28}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", flexWrap: "wrap", gap: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 12.5, color: C.muted }}>Estimated recovery:</span>
+                          <span style={{ fontSize: 12.5, fontWeight: 800, color: C.green, fontFamily: MONO }}>{analysis.fix?.eta}</span>
+                        </div>
+                        {sel.resolved ? (
+                          <span style={{
+                            fontSize: 10, fontWeight: 800, padding: "4px 12px",
+                            background: "rgba(0,232,122,0.08)", border: "1px solid rgba(0,232,122,0.3)",
+                            borderRadius: 4, color: C.green, fontFamily: MONO, marginLeft: "auto",
+                            letterSpacing: "0.05em"
+                          }}>
+                            ✓ REMEDIATED & RESOLVED
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setRemediateOpen(true)}
+                            className="clip-sm"
+                            style={{
+                              background: "linear-gradient(135deg, rgba(0,232,122,0.18), rgba(0,232,122,0.08))",
+                              border: "1px solid rgba(0,232,122,0.35)",
+                              borderRadius: 4, padding: "6px 16px", color: C.green,
+                              fontSize: 10.5, fontWeight: 700, cursor: "pointer",
+                              marginLeft: "auto", display: "flex", alignItems: "center", gap: 6,
+                              letterSpacing: "0.05em", transition: "all 0.25s",
+                              boxShadow: "0 0 15px rgba(0,232,122,0.15)"
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.borderColor = "rgba(0,232,122,0.6)"
+                              e.currentTarget.style.boxShadow = "0 0 25px rgba(0,232,122,0.3)"
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.borderColor = "rgba(0,232,122,0.35)"
+                              e.currentTarget.style.boxShadow = "0 0 15px rgba(0,232,122,0.15)"
+                            }}
+                          >
+                            <Zap size={11} fill={C.green} />
+                            RUN AUTOMATED REMEDIATION
+                          </button>
+                        )}
                       </div>
-                      {sel.resolved ? (
-                        <span style={{
-                          fontSize: 10, fontWeight: 800, padding: "4px 12px",
-                          background: "rgba(0,232,122,0.08)", border: "1px solid rgba(0,232,122,0.3)",
-                          borderRadius: 4, color: C.green, fontFamily: MONO, marginLeft: "auto",
-                          letterSpacing: "0.05em"
-                        }}>
-                          ✓ REMEDIATED & RESOLVED
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => setRemediateOpen(true)}
-                          className="clip-sm"
-                          style={{
-                            background: "linear-gradient(135deg, rgba(0,232,122,0.18), rgba(0,232,122,0.08))",
-                            border: "1px solid rgba(0,232,122,0.35)",
-                            borderRadius: 4, padding: "6px 16px", color: C.green,
-                            fontSize: 10.5, fontWeight: 700, cursor: "pointer",
-                            marginLeft: "auto", display: "flex", alignItems: "center", gap: 6,
-                            letterSpacing: "0.05em", transition: "all 0.25s",
-                            boxShadow: "0 0 15px rgba(0,232,122,0.15)"
-                          }}
-                          onMouseEnter={e => {
-                            e.currentTarget.style.borderColor = "rgba(0,232,122,0.6)"
-                            e.currentTarget.style.boxShadow = "0 0 25px rgba(0,232,122,0.3)"
-                          }}
-                          onMouseLeave={e => {
-                            e.currentTarget.style.borderColor = "rgba(0,232,122,0.35)"
-                            e.currentTarget.style.boxShadow = "0 0 15px rgba(0,232,122,0.15)"
-                          }}
-                        >
-                          <Zap size={11} fill={C.green} />
-                          RUN AUTOMATED REMEDIATION
-                        </button>
-                      )}
-                    </div>
-                    <CopyCmd cmd={analysis.fix.cmd} />
-                  </TacPanel>
+                      <CopyCmd cmd={analysis.fix?.cmd || ""} />
+                    </TacPanel>
+                  )}
 
                   {/* Prevention */}
-                  <TacPanel title="Prevention" icon={<Shield size={12} />} accent={C.cyan} delay={0.34}>
-                    {analysis.prevention.map((item, i) => (
-                      <div key={i} style={{
-                        display: "flex", gap: 12, padding: "10px 0",
-                        borderBottom: i < analysis.prevention.length - 1 ? `1px solid ${C.border}` : "none",
-                        alignItems: "flex-start",
-                      }}>
-                        <span style={{
-                          fontSize: 9, fontWeight: 800, padding: "2px 6px", flexShrink: 0, fontFamily: MONO,
-                          background: item.priority === "HIGH" ? "rgba(255,59,59,0.08)" : "rgba(255,184,0,0.07)",
-                          border: `1px solid ${item.priority === "HIGH" ? "rgba(255,59,59,0.22)" : "rgba(255,184,0,0.2)"}`,
-                          color: item.priority === "HIGH" ? C.red : C.amber,
-                          borderRadius: 3, letterSpacing: "0.06em",
+                  <div style={{ display: "grid", gridTemplateColumns: viewMode === "engineer" ? "1fr 1fr" : "1fr", gap: 12, marginBottom: 12 }}>
+                    <TacPanel title="Prevention" icon={<Shield size={12} />} accent={C.cyan} delay={0.34}>
+                      {(analysis.prevention || []).map((item, i) => (
+                        <div key={i} style={{
+                          display: "flex", gap: 12, padding: "10px 0",
+                          borderBottom: i < (analysis.prevention?.length || 0) - 1 ? `1px solid ${C.border}` : "none",
+                          alignItems: "flex-start",
                         }}>
-                          {item.priority}
-                        </span>
-                        <span style={{ fontSize: 12.5, color: "#A0B0CC", lineHeight: 1.6 }}>{item.text}</span>
-                      </div>
-                    ))}
-                  </TacPanel>
+                          <span style={{
+                            fontSize: 9, fontWeight: 800, padding: "2px 6px", flexShrink: 0, fontFamily: MONO,
+                            background: item.priority === "HIGH" ? "rgba(255,59,59,0.08)" : "rgba(255,184,0,0.07)",
+                            border: `1px solid ${item.priority === "HIGH" ? "rgba(255,59,59,0.22)" : "rgba(255,184,0,0.2)"}`,
+                            color: item.priority === "HIGH" ? C.red : C.amber,
+                            borderRadius: 3, letterSpacing: "0.06em",
+                          }}>
+                            {item.priority}
+                          </span>
+                          <span style={{ fontSize: 12.5, color: "#A0B0CC", lineHeight: 1.6 }}>{item.text}</span>
+                        </div>
+                      ))}
+                    </TacPanel>
+                    
+                    {viewMode === "engineer" && (
+                      <SimilarIncidentsPanel incidents={analysis.similar_incidents} />
+                    )}
+                  </div>
 
                   {/* Chat Copilot War Room */}
                   <ChatCopilot incidentId={sel.id} />
@@ -1920,9 +2820,9 @@ export default function App() {
                 Live Log Stream
               </span>
               <span style={{ fontSize: 10, color: C.dim, fontFamily: MONO }}>
-                {sel.id} · {visibleLogs.length}/{sel.logs.length}
+                {sel.id} · {activeLogs.length}/{sel.logs.length}
               </span>
-              {visibleLogs.length < sel.logs.length && (
+              {(visibleLogs.length < sel.logs.length || (phase === "complete" && replayIndex < 10)) && (
                 <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 4 }}>
                   <div style={{ width: 5, height: 5, borderRadius: "50%", background: C.green, boxShadow: `0 0 6px ${C.green}`, animation: "blink 1.2s ease-in-out infinite" }} />
                   <span style={{ fontSize: 9, color: C.green, fontWeight: 700, fontFamily: MONO }}>LIVE</span>
@@ -1930,7 +2830,7 @@ export default function App() {
               )}
             </div>
             <div ref={logRef} style={{ padding: "7px 16px", overflowY: "auto", height: 156 }}>
-              {visibleLogs.map((log, i) => {
+              {activeLogs.map((log, i) => {
                 if (!log) return null
                 const lc = LOG_COLORS[log.lvl] || C.dim
                 const isHot = log.lvl === "ERROR" || log.lvl === "ALERT" || log.lvl === "FATAL"

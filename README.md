@@ -1,41 +1,76 @@
-# ⚡ NEXUS — AI Incident Root Cause Analyzer 
-> **"Turn a stressful 2 AM production outage into a fully solved, remediated problem in under 30 seconds."**
+# ⚡ NEXUS — Autonomous SRE Operations & Root Cause Analyzer
+> **"Translate chaotic 2 AM production outages into explained, risk-graded, and auto-remediated resolutions in under 30 seconds."**
 
 [![Production Ready](https://img.shields.io/badge/Status-PROD--HEALTHY-00E87A?style=for-the-badge&logo=kubernetes&logoColor=white)](https://github.com/)
 [![License](https://img.shields.io/badge/License-MIT-00D4FF?style=for-the-badge)](https://github.com/)
-[![Built with](https://img.shields.io/badge/Built%20With-FastAPI%20%2B%20React%20%2B%20Groq-9B5FFF?style=for-the-badge)](https://github.com/)
+[![Built with](https://img.shields.io/badge/Built%20With-FastAPI%20%2B%20React%20%2B%20Tailwind-9B5FFF?style=for-the-badge)](https://github.com/)
 
-NEXUS is an elite, high-fidelity AI-powered Site Reliability Engineering (SRE) Operations Center that automatically correlates logs, metric telemetry, and deployment history to diagnose and auto-remediate production incidents with surgical precision. 
+NEXUS is an elite, high-fidelity **Autonomous Site Reliability Engineering (SRE) Operations Center** that automatically correlates logs, metric telemetry, and deployment history to diagnose and auto-remediate production incidents with surgical precision. 
 
 Built for modern distributed microservice infrastructures, it replaces the stressful 45-minute search across dashboards and log tabs during an outage with a **stochastic, real-time diagnostic engine** in seconds.
 
 ---
 
-## 🚀 Key Capabilities
+## 🧠 Technical Blueprint: Problem, Solution & Architecture
 
-* **100% Stochastic Incident Generation:** Generates hyper-detailed, relative-timestamped microservice incident contexts (logs, metric profiles, version tags, commit hashes, pull requests) dynamically on runtime startup via LLM structures or smart Python telemetry models.
-* **Streaming AI SRE Logic:** Establishes direct WebSockets to Groq (`llama-3.1-8b-instant`) or Ollama (`llama3.1:8b`) to stream real-time, step-by-step reasoning outputs representing hypothesis formation,blast-radius mapping, and root-cause confirmation.
-* **Resilient Self-Healing Parser:** Implements a multi-layered regex and brace-repair parser that intercepts malformed, incomplete, or markdown-wrapped LLM JSON streams, guaranteeing high-fidelity rendering without static fallbacks.
-* **Stochastic Automated Remediation:** Generates customized, microsecond-timestamped terminal outputs dynamically matched to the proposed SRE fix command (extracting namespaces, generating random container IDs, and verifying readiness probes).
-* **War Room SRE Chat Copilot:** Nested directly inside the operations card, a dark military-ops styled chat window lets engineers query incident context, logs, metric deadlocks, or rollback steps dynamically with the AI brain.
+### 🚨 1. The Problem: Siloed Chaos at 2:00 AM
+Production outages cost modern enterprises upwards of **$9,000 per minute**. In a typical cloud infrastructure (e.g., Kubernetes + Postgres + Microservices), when a P0 alert fires, SRE teams face three critical bottlenecks:
+* **Telemetry Siloing (Noise Starvation):** Data is isolated in separate storage layers. SREs waste critical minutes context-switching between **Datadog metrics**, **Grafana charts**, **Elasticsearch logs**, **GitLab deploy registries**, and **Jaeger distributed tracing waterfalls**.
+* **Cognitive Overload (Correlation Gap):** Correlating a NullPointerException in payment logs with a rolling deployment event that completed 17 seconds prior requires highly manual, error-prone timeline reconstruction under extreme time pressure.
+* **The Remediation Black Box:** Operations teams refuse to trust "black-box" automation engines that execute recovery scripts blindly without pre-flight risk checks, confidence scoring, or explainability logs.
+
+```
+                  TYPICAL MANUAL OUTAGE FLOW (45+ Mins)
+┌───────────┐     ┌─────────────┐     ┌───────────┐     ┌──────────────┐
+│  Datadog  │ ──► │ PagerDuty   │ ──► │  ELK Logs │ ──► │ manual fix   │  ❌ High MTTR
+│  (Metric) │     │ (Alert Hub) │     │ (Traces)  │     │ (Rollback?)  │
+└───────────┘     └─────────────┘     └───────────┘     └──────────────┘
+```
 
 ---
 
-## 🛠️ Architecture Blueprint
+### ⚡ 2. The Solution: NEXUS Correlation Engine
+NEXUS acts as a unified **Autonomous Site Reliability Engineer**, fusing multiple telemetry streams into a cohesive, interactive war room in under 30 seconds:
+
+* **Unified Diagnostics Pacing**: Combines parallel sub-agent reasoning logs (Log Agent, Metric Agent, DB Agent, Deploy Agent, etc.) with a step-by-step reasoning WebSocket stream that updates on-screen.
+* **Explainable Root Cause Graphs**: Exposes system failures visually through a dynamically mapped **Investigation Graph** and **Confidence Calibration Contributions** (e.g. `+32% Deployment Correlation`, `-4% Missing replica queue`).
+* **OpenTelemetry Waterfall Spans**: Maps gateway requests cascading through microservices down to databases, pointing out failure propagation in deep-crimson alerts.
+* **Interactive Incident Replay System**: A minute-by-minute playback engine that dynamically updates graphs, scrolls log entries, and streams on-screen failure timeline narrations.
+* **Pre-Flight Risk Safeguard Engine**: Compares multiple remediation paths (e.g., Rollback vs. Replica Scale vs. Cache Flush), weighting confidence, recovery ETA, and specific blast radius details so operators can review and approve automated executions safely.
+
+```
+                      NEXUS FLOW (Under 30 Secs)
+┌──────────────────────────────────────────────────────────────────────┐
+│                            NEXUS ENGINE                              │
+│   ┌──────────────┐      ┌─────────────────────────┐      ┌─────────┐ │
+│   │ Telemetry In │ ──►  │ Paced Correlation Loop  │ ──►  │ Resolved│ │  ✓ <30s MTTR
+│   │ (Logs/Metrics│      │ (OTel Traces & Graphs)  │      │ (Secure)│ │
+│   └──────────────┘      └─────────────────────────┘      └─────────┘ │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 🏗️ 3. High-Fidelity SRE Architecture
+NEXUS implements a scalable, decoupled, and highly responsive architecture:
 
 ```mermaid
 graph TD
     A[On-Call SRE Dashboard] -->|WebSocket Connection| B(FastAPI Gateway)
     B -->|Fetch Telemetry Context| C[Stochastic Incident Generator]
     C -->|Dynamic Logs, Metrics, Deploys| B
-    B -->|Stream Analysis Prompt| D{Groq LLM / Ollama Engine}
+    B -->|Stream Analysis Prompt| D{Telemetry Correlation Engine}
     D -->|Real-Time Token Stream| E[Resilient Self-Healing Parser]
     E -->|JSON Structured Report| A
     A -->|POST /api/remediate| F[Remediation Log Compiler]
     F -->|Stochastic Terminal Output| A
-    A -->|POST /api/chat| G[SRE Chat Copilot]
+    A -->|POST /api/chat| G[SRE Command Assistant]
     G -->|Context-Aware Answers| A
 ```
+
+* **Frontend Layer (React + CSS HSL Tokens):** A zero-dependency styling architecture using advanced HSL color variables and dark military operations center palettes, bound together via Framer Motion spring micro-animations and smooth cubic-bezier transitions.
+* **Backend Layer (FastAPI ASGI Async Server):** Uses stateful in-memory incident managers, SQLite cache persistence, and high-speed telemetry simulators (Datadog & PagerDuty mock clients) to serve realistic, dynamic, and timezone-aligned incident telemetry.
+* **Resilient Self-Healing JSON Parser:** Parses non-deterministic data streams with a robust balancing/brace-repair system, guaranteeing high-fidelity UI rendering under any circumstances.
 
 ---
 
@@ -81,7 +116,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 ```
-Update `.env` to include your Groq API Key:
+Update `.env` to include your API Key:
 ```env
 ENV=prod
 GROQ_API_KEY=gsk_your_key_here
