@@ -40,6 +40,9 @@ const C = {
 
 const MONO = "'JetBrains Mono', monospace"
 
+// On Vercel, FastAPI is served at /_/backend — locally the Vite proxy handles /api directly
+const API_BASE = window.location.hostname.includes("vercel.app") ? "/_/backend" : ""
+
 const SEV = {
   P0: { text: C.red,    bg: "rgba(255,59,59,0.06)",  border: "rgba(255,59,59,0.28)",  dot: C.red,    name: "CRITICAL" },
   P1: { text: C.amber,  bg: "rgba(255,184,0,0.06)",  border: "rgba(255,184,0,0.28)",  dot: C.amber,  name: "HIGH"     },
@@ -1159,7 +1162,7 @@ function RemediationTerminal({ open, onClose, cmd, incidentId, onComplete }) {
       }, 100)
 
       try {
-        const res = await fetch("/api/remediate", {
+        const res = await fetch(`${API_BASE}/api/remediate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ incident_id: incidentId, command: cmd })
@@ -1376,7 +1379,7 @@ function ChatCopilot({ incidentId }) {
     }))
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1530,7 +1533,7 @@ function SettingsDrawer({ open, onClose, config, onSave }) {
     setTesting(p => ({ ...p, dd: true }))
     setTestResult(p => ({ ...p, dd: null }))
     try {
-      const res = await fetch("/api/integrations/test/datadog", {
+      const res = await fetch(`${API_BASE}/api/integrations/test/datadog`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ datadog_api_key: local.datadogApiKey, datadog_app_key: local.datadogAppKey, datadog_site: local.datadogSite }),
@@ -1547,7 +1550,7 @@ function SettingsDrawer({ open, onClose, config, onSave }) {
     setTesting(p => ({ ...p, pd: true }))
     setTestResult(p => ({ ...p, pd: null }))
     try {
-      const res = await fetch("/api/integrations/test/pagerduty", {
+      const res = await fetch(`${API_BASE}/api/integrations/test/pagerduty`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pagerduty_api_key: local.pagerdutyApiKey }),
@@ -1563,7 +1566,7 @@ function SettingsDrawer({ open, onClose, config, onSave }) {
   const save = async () => {
     setSaving(true)
     try {
-      await fetch("/api/config", {
+      await fetch(`${API_BASE}/api/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1937,10 +1940,10 @@ export default function App() {
   
   const resetAllIncidents = async () => {
     try {
-      const res = await fetch("/api/incidents/reset", { method: "POST" })
+      const res = await fetch(`${API_BASE}/api/incidents/reset`, { method: "POST" })
       const data = await res.json()
       if (data && data.ok) {
-        const incidentsRes = await fetch("/api/incidents")
+        const incidentsRes = await fetch(`${API_BASE}/api/incidents`)
         const incidentsData = await incidentsRes.json()
         if (Array.isArray(incidentsData)) {
           setIncidents(incidentsData.map(inc => ({
@@ -2022,7 +2025,7 @@ export default function App() {
   useEffect(() => {
     async function loadIncidents() {
       try {
-        const res = await fetch("/api/incidents")
+        const res = await fetch(`${API_BASE}/api/incidents`)
         const data = await res.json()
         if (Array.isArray(data) && data.length > 0) {
           setIncidents(data.map(inc => ({
@@ -2047,7 +2050,7 @@ export default function App() {
     if (!selId) return
     async function loadIncidentDetails() {
       try {
-        const res = await fetch(`/api/incidents/${selId}`)
+        const res = await fetch(`${API_BASE}/api/incidents/${selId}`)
         const data = await res.json()
         if (data && data.id === selId) {
           setIncidents(prev => prev.map(inc => {
@@ -2141,7 +2144,9 @@ export default function App() {
 
     let wsConnected = false
     try {
-      // Connect through Vite proxy for same-origin safety
+      // On Vercel WS is not supported — fallback handles it. Locally use Vite proxy.
+      const isVercel = window.location.hostname.includes("vercel.app")
+      if (isVercel) { triggerFallback(); return; }
       const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:"
       const wsUrl = `${wsProto}//${window.location.host}/ws/analysis/${sel.id}`
       const ws = new WebSocket(wsUrl)

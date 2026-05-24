@@ -42,3 +42,5 @@ Thumbs.db
 
 # Archive/Zip files in root
 files.zip
+
+.vercel
